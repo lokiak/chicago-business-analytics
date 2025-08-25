@@ -165,7 +165,8 @@ def fetch_licenses(client, cfg, days_lookback: int):
     logger.info(f"Business licenses dataset ID: {ds['id']}")
     logger.info(f"Constructed query parameters: {params}")
     logger.info(f"Date lookback: {days_lookback} days")
-    logger.info(f"Start date: {start_date_days_ago(days_lookback)}")
+    start_date = (datetime.utcnow() - pd.Timedelta(days=days_lookback)).strftime('%Y-%m-%d')
+    logger.info(f"Start date: {start_date}")
     logger.info(f"Expanded fields: {len(params['$select'].split(','))} fields selected")
 
     data = client.get(ds["id"], params)
@@ -218,7 +219,7 @@ def fetch_cta(client, cfg, days_lookback: int):
     ds = cfg["datasets"]["cta_boardings"]
     # Use 2 years of data for CTA since dataset may not be updated as frequently
     cta_lookback_days = 730  # 2 years
-    cta_start_date = start_date_days_ago(cta_lookback_days)
+    cta_start_date = (datetime.utcnow() - pd.Timedelta(days=cta_lookback_days)).strftime('%Y-%m-%d')
 
     logger.info(f"CTA dataset ID: {ds['id']}")
     logger.info(f"CTA lookback period: {cta_lookback_days} days (2 years)")
@@ -238,6 +239,49 @@ def fetch_cta(client, cfg, days_lookback: int):
         return df
     df[ds['total_field']] = pd.to_numeric(df[ds['total_field']], errors="coerce").fillna(0).astype(int)
     return df
+
+def flatten_location_data(df):
+    """
+    Flatten nested location data to make it compatible with Google Sheets
+    """
+    df_flat = df.copy()
+
+    # Check if 'location' column exists and has nested data
+    if 'location' in df_flat.columns:
+        try:
+            # Extract latitude and longitude from location field
+            if df_flat['location'].notna().any():
+                # Handle the nested location structure
+                location_data = df_flat['location'].dropna()
+
+                # Extract coordinates if they exist
+                if not location_data.empty:
+                    # Create new flattened columns
+                    df_flat['location_latitude'] = None
+                    df_flat['location_longitude'] = None
+                    df_flat['location_human_address'] = None
+
+                    # Process each location entry
+                    for idx, loc in location_data.items():
+                        if isinstance(loc, dict):
+                            if 'latitude' in loc:
+                                df_flat.at[idx, 'location_latitude'] = loc['latitude']
+                            if 'longitude' in loc:
+                                df_flat.at[idx, 'location_longitude'] = loc['longitude']
+                            if 'human_address' in loc:
+                                df_flat.at[idx, 'location_human_address'] = str(loc['human_address'])
+
+                    # Drop the original nested location column
+                    df_flat = df_flat.drop(columns=['location'])
+
+                    logger.info("Successfully flattened location data")
+        except Exception as e:
+            logger.warning(f"Could not flatten location data: {e}")
+            # If flattening fails, just drop the location column
+            if 'location' in df_flat.columns:
+                df_flat = df_flat.drop(columns=['location'])
+
+    return df_flat
 
 def main():
     settings = load_settings()
@@ -313,13 +357,17 @@ def main():
     # Write full expanded datasets
     if not lic_df.empty:
         logger.info(f"Writing full business licenses dataset with {len(lic_df)} records and {len(lic_df.columns)} columns...")
-        lic_full_ws = upsert_worksheet(sh, "Business_Licenses_Full", rows=max(len(lic_df)+10, 100), cols=50)
-        overwrite_with_dataframe(lic_full_ws, lic_df)
+        # Flatten location data before writing
+        lic_df_flat = flatten_location_data(lic_df)
+        lic_full_ws = upsert_worksheet(sh, "Business_Licenses_Full", rows=max(len(lic_df_flat)+10, 100), cols=50)
+        overwrite_with_dataframe(lic_full_ws, lic_df_flat)
 
     if settings.enable_permits and not p_df.empty:
         logger.info(f"Writing full building permits dataset with {len(p_df)} records and {len(p_df.columns)} columns...")
-        permits_full_ws = upsert_worksheet(sh, "Building_Permits_Full", rows=max(len(p_df)+10, 100), cols=50)
-        overwrite_with_dataframe(permits_full_ws, p_df)
+        # Flatten location data before writing
+        p_df_flat = flatten_location_data(p_df)
+        permits_full_ws = upsert_worksheet(sh, "Building_Permits_Full", rows=max(len(p_df_flat)+10, 100), cols=50)
+        overwrite_with_dataframe(permits_full_ws, p_df_flat)
 
     if settings.enable_cta and not cta_df.empty:
         logger.info(f"Writing full CTA dataset with {len(cta_df)} records and {len(cta_df.columns)} columns...")
