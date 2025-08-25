@@ -1,0 +1,19 @@
+
+domain: data.cityofchicago.org
+datasets:
+  business_licenses:
+    id: r5kz-chrr
+    date_field: license_start_date
+    area_field: community_area
+    area_name_field: community_area_name
+    description_field: license_description
+    application_type_field: application_type
+    issue_value: ISSUE
+  building_permits:
+    id: ydr8-5enu
+    date_field: issue_date
+    area_field: community_area
+  cta_boardings:
+    id: 6iiy-9s97
+    date_field: service_date
+    total_field: total_rides
