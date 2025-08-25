@@ -333,7 +333,9 @@ def main():
 
     # Create empty summary since we're not doing weekly aggregation
     summary_df = pd.DataFrame(columns=["metric","week_start","community_area_name","value"])
-    latest_week = "N/A"
+    # Set latest_week to current date for brief generation
+    from datetime import datetime
+    latest_week = datetime.utcnow()
 
     # Sheets
     logger.info("Writing to Google Sheets...")
