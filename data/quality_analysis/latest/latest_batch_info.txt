@@ -1,0 +1,14 @@
+Latest Quality Analysis Batch
+==============================
+Batch ID: data_quality_batch_20250901_153632
+Generated: 2025-09-01 15:36:32
+Source Directory: ../../data/quality_analysis/data_quality_batch_20250901_153632
+Datasets Analyzed: business_licenses, building_permits, cta_boardings
+Total Records: 11,355
+
+Analysis Components:
+  - quality_matrix.pkl
+  - contamination_analysis.pkl
+  - anomaly_detection.pkl
+  - business_validation.pkl
+  - completeness_analysis.pkl

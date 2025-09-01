@@ -1,0 +1,22 @@
+{
+  "batches": [
+    {
+      "batch_id": "data_quality_batch_20250901_153632",
+      "timestamp": "20250901_153632",
+      "datetime": "2025-09-01T15:36:32.192354",
+      "directory": "../../data/quality_analysis/data_quality_batch_20250901_153632",
+      "datasets": [
+        "business_licenses",
+        "building_permits",
+        "cta_boardings"
+      ],
+      "total_records": 11355,
+      "summary_scores": {
+        "overall_quality": 0.9882822012156426,
+        "contaminated_fields": 7,
+        "total_recommendations": 2
+      }
+    }
+  ],
+  "last_updated": "2025-09-01T15:36:32.192363"
+}

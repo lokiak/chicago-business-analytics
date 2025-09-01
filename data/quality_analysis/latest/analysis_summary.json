@@ -1,0 +1,73 @@
+{
+  "batch_info": {
+    "batch_id": "data_quality_batch_20250901_153632",
+    "analysis_timestamp": "20250901_153632",
+    "analysis_datetime": "2025-09-01T15:36:32.159129",
+    "datasets_analyzed": [
+      "business_licenses",
+      "building_permits",
+      "cta_boardings"
+    ],
+    "total_records": 11355,
+    "analysis_components": [
+      "quality_matrix",
+      "contamination_analysis",
+      "anomaly_detection",
+      "business_validation",
+      "completeness_analysis"
+    ]
+  },
+  "quality_summary": {
+    "overall_score": 0.9882822012156426,
+    "data_purity_score": 0.9869444769310257,
+    "contaminated_fields": 7,
+    "critical_issues": 0,
+    "excellent_fields": 68
+  },
+  "contamination_summary": {
+    "total_contamination_types": 4,
+    "datasets_with_contamination": 2,
+    "mixed_type_issues": 1,
+    "special_char_issues": 0,
+    "encoding_issues": 3
+  },
+  "anomaly_summary": {
+    "total_anomaly_types": 35,
+    "high_severity_issues": 12,
+    "medium_severity_issues": 7,
+    "low_severity_issues": 16,
+    "datasets_with_anomalies": 2
+  },
+  "business_rules_summary": {
+    "total_violations": 4,
+    "datasets_with_violations": 2,
+    "violation_types": [
+      "Invalid date logic: 70 licenses start after expiration",
+      "Geographic bounds: 4 records outside Chicago area",
+      "Invalid license status: ['AAI', 'AAC']",
+      "Invalid permit types: ['PERMIT \u2013 EXPRESS PERMIT PROGRAM', 'PERMIT - RENOVATION/ALTERATION', 'PERMIT - NEW CONSTRUCTION', 'PERMIT - WRECKING/DEMOLITION', 'PERMIT - SIGNS', 'PERMIT - ELEVATOR EQUIPMENT', 'PERMIT - REINSTATE REVOKED PMT']"
+    ]
+  },
+  "completeness_summary": {
+    "total_recommendations": 2,
+    "total_consistency_issues": 8,
+    "datasets_requiring_attention": 1,
+    "critical_imputation_needed": 0,
+    "low_value_fields": 2
+  },
+  "file_manifest": {
+    "batch_directory": "../../data/quality_analysis/data_quality_batch_20250901_153632",
+    "files": {
+      "quality_matrix": "../../data/quality_analysis/data_quality_batch_20250901_153632/quality_matrix.pkl",
+      "contamination_analysis": "../../data/quality_analysis/data_quality_batch_20250901_153632/contamination_analysis.pkl",
+      "anomaly_detection": "../../data/quality_analysis/data_quality_batch_20250901_153632/anomaly_detection.pkl",
+      "business_validation": "../../data/quality_analysis/data_quality_batch_20250901_153632/business_validation.pkl",
+      "completeness_analysis": "../../data/quality_analysis/data_quality_batch_20250901_153632/completeness_analysis.pkl"
+    }
+  },
+  "cleaning_priority_summary": {
+    "critical_actions_needed": 4,
+    "high_priority_actions": 4,
+    "total_fields_analyzed": 71
+  }
+}
