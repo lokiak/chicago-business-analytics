@@ -84,7 +84,11 @@ class ChicagoDataSchemas:
             # Geographic coordinates
             FieldDefinition("latitude", DataType.FLOAT, "Latitude coordinate", False),
             FieldDefinition("longitude", DataType.FLOAT, "Longitude coordinate", False),
-            FieldDefinition("location", DataType.GEOJSON, "GeoJSON location object", False),
+
+            # Flattened location data (processed from original 'location' field)
+            FieldDefinition("location_latitude", DataType.FLOAT, "Latitude from flattened location", False),
+            FieldDefinition("location_longitude", DataType.FLOAT, "Longitude from flattened location", False),
+            FieldDefinition("location_human_address", DataType.STRING, "Human readable address from location", False),
 
             # Application and processing
             FieldDefinition("application_type", DataType.STRING, "Type of application", True),
@@ -209,10 +213,10 @@ class SchemaManager:
     @staticmethod
     def get_geographic_fields(dataset_name: str) -> List[str]:
         """Get geographic field names for a dataset."""
-        geographic_types = [DataType.FLOAT, DataType.GEOJSON]
+        geographic_types = [DataType.FLOAT, DataType.GEOJSON, DataType.STRING]
         return [field.name for field in SchemaManager.get_schema(dataset_name).fields
                 if field.data_type in geographic_types and
-                any(geo_term in field.name.lower() for geo_term in ['lat', 'lon', 'location', 'area', 'ward', 'precinct'])]
+                any(geo_term in field.name.lower() for geo_term in ['lat', 'lon', 'location', 'area', 'ward', 'precinct', 'address'])]
 
     @staticmethod
     def get_business_fields(dataset_name: str) -> List[str]:
