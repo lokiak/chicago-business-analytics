@@ -1,7 +1,16 @@
 # Chicago SMB Market Radar - Documentation
 
 ## Overview
-This project integrates Chicago's open data sources (Socrata) with business analytics to provide insights into small and medium business market trends.
+This documentation provides comprehensive guidance for the Chicago SMB Market Radar project, a business intelligence platform that integrates Chicago's open data sources (Socrata) with advanced analytics to provide insights into small and medium business market trends.
+
+## Quick Navigation
+
+- **[Main Project README](../README.md)** - Complete project overview and setup instructions
+- **[BI Framework Strategic Plan](BI_FRAMEWORK_STRATEGIC_PLAN.md)** - Strategic mapping to BI 0→1 Framework
+- **[Automation Strategy](AUTOMATION_STRATEGY.md)** - Comprehensive automation roadmap
+- **[Technical Reference](TECHNICAL_REFERENCE.md)** - Technical implementation details
+- **[Workflow Documentation](WORKFLOW.md)** - Operational procedures
+- **[Jupyter Notebooks Guide](../notebooks/README.md)** - Analysis framework documentation
 
 ## Project Structure
 ```
