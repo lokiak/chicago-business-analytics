@@ -1,5 +1,20 @@
 run:
-	python -m src.main
+	python main.py --all
+
+run-step2:
+	python main.py --step 2
+
+run-step3:
+	python main.py --step 3
+
+run-step4:
+	python main.py --step 4
+
+run-step5:
+	python main.py --step 5
+
+run-step6:
+	python main.py --step 6
 
 docs-serve:
 	@echo "🚀 Starting documentation server..."
@@ -27,27 +42,29 @@ docs-build:
 help:
 	@echo "Chicago SMB Market Radar - Available Commands:"
 	@echo ""
-	@echo "📊 Data Pipeline:"
-	@echo "  run              Run the main data pipeline"
+	@echo "📊 BI Framework Steps:"
+	@echo "  run              Run all BI framework steps"
+	@echo "  run-step2        Run Step 2: Data Ingestion"
+	@echo "  run-step3        Run Step 3: Transform & Model"
+	@echo "  run-step4        Run Step 4: Load & Validate"
+	@echo "  run-step5        Run Step 5: Visualize & Report"
+	@echo "  run-step6        Run Step 6: Automate & Scale"
 	@echo ""
 	@echo "📚 Documentation:"
 	@echo "  docs-serve       Serve documentation locally at http://localhost:8000"
 	@echo "  docs-build       Build documentation (Markdown files)"
 	@echo ""
-	@echo "🔧 Automation:"
-	@echo "  setup-automation Run automation setup script"
-	@echo ""
 	@echo "📋 Help:"
 	@echo "  help             Show this help message"
 	@echo ""
 	@echo "💡 Examples:"
-	@echo "  make run                    # Run data pipeline"
+	@echo "  make run                    # Run all steps"
+	@echo "  make run-step2             # Run data ingestion only"
 	@echo "  make docs-serve            # Serve docs locally"
-	@echo "  make setup-automation      # Set up automation"
 
 setup-automation:
 	@echo "🔧 Setting up automation..."
-	@chmod +x scripts/setup_automation.sh
-	@./scripts/setup_automation.sh
+	@chmod +x step6_automate_scale/scripts/setup_automation.sh
+	@./step6_automate_scale/scripts/setup_automation.sh
 
-.PHONY: run docs-serve docs-build help setup-automation
+.PHONY: run run-step2 run-step3 run-step4 run-step5 run-step6 docs-serve docs-build help setup-automation

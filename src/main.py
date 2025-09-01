@@ -2,18 +2,20 @@
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
+import sys
 
-from .logging_setup import setup_logger
-from .config import load_settings, load_datasets_yaml
-from .socrata import SocrataClient
+# Add paths for imports
+sys.path.append(str(Path(__file__).parent.parent / "shared"))
+sys.path.append(str(Path(__file__).parent.parent / "step2_data_ingestion"))
 
-
-from .sheets import open_sheet, upsert_worksheet, overwrite_with_dataframe
-from .brief import render_markdown_brief
+from logging_setup import setup_logger
+from config_manager import load_settings, load_datasets_yaml
+from socrata_client import SocrataClient
+from sheets_client import open_sheet, upsert_worksheet, overwrite_with_dataframe
+from schema import SchemaManager
 
 logger = setup_logger()
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-REPORTS_DIR = Path(__file__).resolve().parent.parent / "reports"
 RAW_DIR = DATA_DIR / "raw"
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -147,17 +149,12 @@ def debug_cta_api(client, cfg):
 
 def fetch_licenses(client, cfg, days_lookback: int):
     ds = cfg["datasets"]["business_licenses"]
+
+    # Get field names from schema instead of hardcoded list
+    field_names = SchemaManager.get_field_names("business_licenses")
+
     params = {
-        "$select": ",".join([
-            "id", "license_id", "account_number", "site_number", "legal_name", "doing_business_as_name",
-            "address", "city", "state", "zip_code", "ward", "precinct", "ward_precinct", "police_district",
-            f"{ds['area_field']}", f"{ds['area_name_field']}", "neighborhood", "license_code",
-            f"{ds['description_field']}", "business_activity_id", "business_activity", "license_number",
-            f"{ds['application_type_field']}", "application_created_date", "application_requirements_complete",
-            "payment_date", "conditional_approval", f"{ds['date_field']}", "expiration_date",
-            "license_approved_for_issuance", "date_issued", "license_status", "license_status_change_date",
-            "ssa", "latitude", "longitude", "location"
-        ]),
+        "$select": ",".join(field_names),
         "$where": f"{ds['application_type_field']}='{ds['issue_value']}' AND {ds['date_field']} >= '{(datetime.utcnow() - pd.Timedelta(days=days_lookback)).strftime('%Y-%m-%d')}'",
         "$order": f"{ds['date_field']}"
     }
@@ -186,17 +183,12 @@ def fetch_licenses(client, cfg, days_lookback: int):
 
 def fetch_permits(client, cfg, days_lookback: int):
     ds = cfg["datasets"]["building_permits"]
+
+    # Get field names from schema instead of hardcoded list
+    field_names = SchemaManager.get_field_names("building_permits")
+
     params = {
-        "$select": ",".join([
-            "id", "permit_", "permit_status", "permit_milestone", "permit_type", "review_type",
-            "application_start_date", f"{ds['date_field']}", "processing_time", "street_number",
-            "street_direction", "street_name", "work_type", "work_description", "building_fee_paid",
-            "zoning_fee_paid", "other_fee_paid", "subtotal_paid", "building_fee_unpaid",
-            "zoning_fee_unpaid", "other_fee_unpaid", "subtotal_unpaid", "building_fee_waived",
-            "building_fee_subtotal", "zoning_fee_subtotal", "other_fee_subtotal", "zoning_fee_waived",
-            "other_fee_waived", "subtotal_waived", "total_fee",
-            f"{ds['area_field']}"
-        ]),
+        "$select": ",".join(field_names),
         "$where": f"{ds['date_field']} >= '{(datetime.utcnow() - pd.Timedelta(days=days_lookback)).strftime('%Y-%m-%d')}'",
         "$order": f"{ds['date_field']}"
     }
@@ -225,8 +217,11 @@ def fetch_cta(client, cfg, days_lookback: int):
     logger.info(f"CTA lookback period: {cta_lookback_days} days (2 years)")
     logger.info(f"CTA start date: {cta_start_date}")
 
+    # Get field names from schema instead of hardcoded list
+    field_names = SchemaManager.get_field_names("cta_boardings")
+
     params = {
-        "$select": f"{ds['date_field']}, {ds['total_field']}",
+        "$select": ",".join(field_names),
         "$where": f"{ds['date_field']} >= '{cta_start_date}'",
         "$order": f"{ds['date_field']}"
     }
@@ -376,13 +371,8 @@ def main():
         cta_full_ws = upsert_worksheet(sh, "CTA_Full", rows=max(len(cta_df)+10, 100), cols=20)
         overwrite_with_dataframe(cta_full_ws, cta_df)
 
-    # Brief
-    logger.info("Rendering brief...")
-    # Create empty dataframes for brief since we're not doing weekly aggregation
-    top_level = pd.DataFrame(columns=["community_area_name", "new_licenses"])
-    top_momentum = pd.DataFrame(columns=["community_area_name", "new_licenses"])
-    md_path = render_markdown_brief(REPORTS_DIR, latest_week, top_level, top_momentum)
-    logger.info(f"Brief saved to {md_path}")
+    # Brief generation temporarily disabled (functionality moved to step5)
+    logger.info("Brief generation skipped - will be implemented in step5_visualize_report")
     logger.info("Done.")
 
 if __name__ == "__main__":

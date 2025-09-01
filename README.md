@@ -168,6 +168,17 @@ tail -f logs/automation.log
 make docs-serve
 ```
 
+### 6. Restructure to BI 0→1 Framework (Optional)
+```bash
+# Restructure project to align with BI 0→1 Framework
+python scripts/restructure_project.py
+
+# Use new structure
+python main.py --all          # Run all steps
+python main.py --step 2       # Run data ingestion
+make run-step3               # Run transformations
+```
+
 ## Key Benefits
 
 ### For Stakeholders
