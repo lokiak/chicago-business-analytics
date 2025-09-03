@@ -294,7 +294,7 @@ def save_analysis_results(df: pd.DataFrame, filename: str, data_dir: str = '../d
 
 def load_analysis_results(filename: str, data_dir: str = '../data/processed') -> pd.DataFrame:
     """
-    Load analysis results from pickle file.
+    Load analysis results from pickle file with enhanced compatibility handling.
 
     Args:
         filename: Name of the file (without extension)
@@ -304,15 +304,61 @@ def load_analysis_results(filename: str, data_dir: str = '../data/processed') ->
         pandas.DataFrame: Loaded data
     """
     from pathlib import Path
+    import sys
+    import types
 
     file_path = Path(data_dir) / f"{filename}.pkl"
 
-    if file_path.exists():
+    if not file_path.exists():
+        print(f"❌ File not found: {file_path}")
+        return pd.DataFrame()
+
+    try:
+        # First, try normal loading
         df = pd.read_pickle(file_path)
         print(f"✅ Loaded analysis results from {file_path}")
         return df
-    else:
-        print(f"❌ File not found: {file_path}")
+
+    except (ModuleNotFoundError, AttributeError) as e:
+        # Handle numpy compatibility issues
+        if "numpy._core" in str(e) or "_core" in str(e):
+            print(f"🔧 Applying numpy compatibility fix for {file_path}")
+
+            try:
+                # Apply numpy._core compatibility mapping
+                import numpy as np
+                if 'numpy._core' not in sys.modules:
+                    core_module = types.ModuleType('numpy._core')
+                    core_module.numeric = np.core.numeric
+                    if hasattr(np.core, 'multiarray'):
+                        core_module.multiarray = np.core.multiarray
+                    if hasattr(np.core, 'umath'):
+                        core_module.umath = np.core.umath
+
+                    sys.modules['numpy._core'] = core_module
+                    sys.modules['numpy._core.numeric'] = np.core.numeric
+                    if hasattr(np.core, 'multiarray'):
+                        sys.modules['numpy._core.multiarray'] = np.core.multiarray
+                    if hasattr(np.core, 'umath'):
+                        sys.modules['numpy._core.umath'] = np.core.umath
+
+                # Try loading again with compatibility fix
+                df = pd.read_pickle(file_path)
+                print(f"✅ Loaded analysis results from {file_path} (with compatibility fix)")
+
+                # Suggest refreshing the cache
+                print(f"💡 Tip: Consider refreshing this cache file with: python scripts/refresh_pickle_cache.py")
+                return df
+
+            except Exception as fix_error:
+                print(f"❌ Failed to load {file_path} even with compatibility fix: {fix_error}")
+                return pd.DataFrame()
+        else:
+            print(f"❌ Failed to load {file_path}: {e}")
+            return pd.DataFrame()
+
+    except Exception as e:
+        print(f"❌ Unexpected error loading {file_path}: {e}")
         return pd.DataFrame()
 
 def print_insights_summary(insights: Dict[str, any]) -> None:
