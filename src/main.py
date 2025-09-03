@@ -11,13 +11,10 @@ sys.path.append(str(Path(__file__).parent.parent / "step2_data_ingestion"))
 from logging_setup import setup_logger
 from config_manager import load_settings, load_datasets_yaml
 from socrata_client import SocrataClient
-from sheets_client import open_sheet, upsert_worksheet, overwrite_with_dataframe
+from sheets_client import open_sheet, upsert_worksheet, overwrite_with_dataframe, upsert_to_worksheet, get_date_filtered_data
 from schema import SchemaManager
 
 logger = setup_logger()
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-RAW_DIR = DATA_DIR / "raw"
-RAW_DIR.mkdir(parents=True, exist_ok=True)
 
 def debug_socrata_api(client, cfg):
     """Debug function to test Socrata API directly"""
@@ -174,7 +171,7 @@ def fetch_licenses(client, cfg, days_lookback: int):
         actual_fields = list(data[0].keys()) if data[0] else []
         logger.info(f"Actual fields received: {actual_fields}")
 
-    pd.DataFrame(data).to_json(RAW_DIR / f"licenses_{datetime.utcnow().date().isoformat()}.json", orient="records", indent=2)
+    # No longer saving JSON files locally to save space
     df = pd.DataFrame(data)
     if df.empty:
         return df
@@ -200,7 +197,7 @@ def fetch_permits(client, cfg, days_lookback: int):
         actual_fields = list(data[0].keys()) if data[0] else []
         logger.info(f"Actual fields received: {actual_fields}")
 
-    pd.DataFrame(data).to_json(RAW_DIR / f"permits_{datetime.utcnow().date().isoformat()}.json", orient="records", indent=2)
+    # No longer saving JSON files locally to save space
     df = pd.DataFrame(data)
     if df.empty:
         return df
@@ -228,7 +225,7 @@ def fetch_cta(client, cfg, days_lookback: int):
 
     logger.info(f"CTA query parameters: {params}")
     data = client.get(ds["id"], params)
-    pd.DataFrame(data).to_json(RAW_DIR / f"cta_{datetime.utcnow().date().isoformat()}.json", orient="records", indent=2)
+    # No longer saving JSON files locally to save space
     df = pd.DataFrame(data)
     if df.empty:
         return df
@@ -351,25 +348,31 @@ def main():
     ws4 = upsert_worksheet(sh, settings.tab_summary, rows=max(len(summary_df)+10, 100), cols=8)
     overwrite_with_dataframe(ws4, summary_df)
 
-    # Write full expanded datasets
+    # Write full expanded datasets using dynamic updates (upsert)
     if not lic_df.empty:
-        logger.info(f"Writing full business licenses dataset with {len(lic_df)} records and {len(lic_df.columns)} columns...")
+        logger.info(f"Upserting business licenses dataset with {len(lic_df)} records and {len(lic_df.columns)} columns...")
         # Flatten location data before writing
         lic_df_flat = flatten_location_data(lic_df)
-        lic_full_ws = upsert_worksheet(sh, "Business_Licenses_Full", rows=max(len(lic_df_flat)+10, 100), cols=50)
-        overwrite_with_dataframe(lic_full_ws, lic_df_flat)
+        lic_full_ws = upsert_worksheet(sh, "Business_Licenses_Full", rows=max(len(lic_df_flat)+10, 1000), cols=50)
+
+        # Upsert using unique identifier (id field)
+        upsert_to_worksheet(lic_full_ws, lic_df_flat, key_columns=['id'])
 
     if settings.enable_permits and not p_df.empty:
-        logger.info(f"Writing full building permits dataset with {len(p_df)} records and {len(p_df.columns)} columns...")
+        logger.info(f"Upserting building permits dataset with {len(p_df)} records and {len(p_df.columns)} columns...")
         # Flatten location data before writing
         p_df_flat = flatten_location_data(p_df)
-        permits_full_ws = upsert_worksheet(sh, "Building_Permits_Full", rows=max(len(p_df_flat)+10, 100), cols=50)
-        overwrite_with_dataframe(permits_full_ws, p_df_flat)
+        permits_full_ws = upsert_worksheet(sh, "Building_Permits_Full", rows=max(len(p_df_flat)+10, 1000), cols=50)
+
+        # Upsert using unique identifier (id field)
+        upsert_to_worksheet(permits_full_ws, p_df_flat, key_columns=['id'])
 
     if settings.enable_cta and not cta_df.empty:
-        logger.info(f"Writing full CTA dataset with {len(cta_df)} records and {len(cta_df.columns)} columns...")
-        cta_full_ws = upsert_worksheet(sh, "CTA_Full", rows=max(len(cta_df)+10, 100), cols=20)
-        overwrite_with_dataframe(cta_full_ws, cta_df)
+        logger.info(f"Upserting CTA dataset with {len(cta_df)} records and {len(cta_df.columns)} columns...")
+        cta_full_ws = upsert_worksheet(sh, "CTA_Full", rows=max(len(cta_df)+10, 1000), cols=20)
+
+        # Upsert using service date as unique identifier
+        upsert_to_worksheet(cta_full_ws, cta_df, key_columns=['service_date'])
 
     # Brief generation temporarily disabled (functionality moved to step5)
     logger.info("Brief generation skipped - will be implemented in step5_visualize_report")

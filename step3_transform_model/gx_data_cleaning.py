@@ -61,19 +61,66 @@ class SmartDataCleaner:
     def _setup_gx_context(self):
         """Setup Great Expectations context."""
         try:
-            # Try to get existing context or create new one
-            try:
-                self.context = gx.get_context(context_root_dir=self.gx_context_path)
-                logger.info(f"✅ Loaded existing GX context from {self.gx_context_path}")
-            except:
-                # Create new context if none exists
-                self.context = gx.get_context(context_root_dir=self.gx_context_path,
-                                            mode="file")
-                logger.info(f"✅ Created new GX context at {self.gx_context_path}")
+            # Try to get existing context
+            self.context = gx.get_context(context_root_dir=self.gx_context_path)
+            logger.info(f"✅ Loaded existing GX context from {self.gx_context_path}")
+
+            # Set up pandas datasource for runtime data validation
+            self._setup_pandas_datasource()
 
         except Exception as e:
             logger.warning(f"⚠️  Could not setup GX context: {e}")
             self.context = None
+
+    def _setup_pandas_datasource(self):
+        """Set up pandas datasource for runtime DataFrame validation."""
+        try:
+            # Check if datasource already exists
+            datasource_name = "chicago_smb_pandas_datasource"
+
+            try:
+                # Try to get existing datasource using GX 1.x API
+                self.context.data_sources.get(datasource_name)
+                logger.info(f"✅ Using existing datasource: {datasource_name}")
+            except:
+                try:
+                    # Create new pandas datasource using GX 1.x API
+                    self.context.data_sources.add_pandas(name=datasource_name)
+                    logger.info(f"✅ Created pandas datasource: {datasource_name}")
+                except Exception as create_error:
+                    # Fallback to older API if new one doesn't work
+                    logger.warning(f"New API failed: {create_error}, trying fallback")
+                    # For now, we'll log and continue without datasource setup
+                    logger.info("⚠️  Datasource setup skipped - will create at validation time")
+
+        except Exception as e:
+            logger.warning(f"⚠️  Could not setup pandas datasource: {e}")
+
+    def _create_batch_request(self, df: pd.DataFrame, dataset_name: str):
+        """Create a batch request for DataFrame validation."""
+        try:
+            # Try to get or create datasource
+            datasource_name = "chicago_smb_pandas_datasource"
+            try:
+                datasource = self.context.data_sources.get(datasource_name)
+            except:
+                datasource = self.context.data_sources.add_pandas(name=datasource_name)
+
+            # Get or create data asset
+            try:
+                asset = datasource.get_asset(dataset_name)
+            except:
+                asset = datasource.add_dataframe_asset(name=dataset_name)
+
+            return asset.build_batch_request(dataframe=df)
+
+        except Exception as e:
+            # Fallback approach - use a simple dictionary-based batch request
+            return {
+                "datasource_name": "chicago_smb_pandas_datasource",
+                "data_asset_name": dataset_name,
+                "batch_data": df
+            }
 
     def detect_and_plan_transformations(self, df: pd.DataFrame, dataset_name: str) -> Dict[str, Any]:
         """
@@ -340,15 +387,15 @@ class SmartDataCleaner:
                 # Simple rule implementations
                 if 'community_area between 1 and 77' in rule:
                     if 'community_area' in df.columns:
-                        df.loc[~df['community_area'].between(1, 77, na=False), 'community_area'] = None
+                        df.loc[~df['community_area'].between(1, 77, inclusive='both'), 'community_area'] = None
                         print(f"   ✅ Applied: {rule}")
 
                 elif 'latitude between' in rule and 'longitude between' in rule:
                     # Chicago coordinate bounds
                     if 'latitude' in df.columns:
-                        df.loc[~df['latitude'].between(41.6, 42.1, na=False), 'latitude'] = None
+                        df.loc[~df['latitude'].between(41.6, 42.1, inclusive='both'), 'latitude'] = None
                     if 'longitude' in df.columns:
-                        df.loc[~df['longitude'].between(-87.9, -87.5, na=False), 'longitude'] = None
+                        df.loc[~df['longitude'].between(-87.9, -87.5, inclusive='both'), 'longitude'] = None
                     print(f"   ✅ Applied coordinate bounds validation")
 
                 elif 'total_fee >= 0' in rule:
@@ -381,7 +428,15 @@ class SmartDataCleaner:
             except:
                 pass
 
-            suite = self.context.create_expectation_suite(suite_name)
+            try:
+                suite = self.context.add_or_update_expectation_suite(suite_name)
+            except AttributeError:
+                # Fallback for older GX versions
+                try:
+                    suite = self.context.create_expectation_suite(suite_name)
+                except:
+                    # If suite already exists, get it
+                    suite = self.context.get_expectation_suite(suite_name)
 
             # Get desired schema for creating expectations
             desired_schema = DesiredSchemaManager.get_desired_schema(dataset_name)
@@ -456,13 +511,16 @@ class SmartDataCleaner:
             if not suite:
                 return None
 
-            # Create validator
-            validator = self.context.get_validator(
-                batch_request=self.context.sources.add_pandas(dataset_name).add_asset(
-                    dataset_name
-                ).build_batch_request(dataframe=df),
-                expectation_suite_name=suite.expectation_suite_name
-            )
+            # Create validator using GX 1.x simplified approach
+            try:
+                # Use the simplified validator creation approach
+                validator = self.context.get_validator(
+                    batch_request=self._create_batch_request(df, dataset_name),
+                    expectation_suite_name=suite.expectation_suite_name
+                )
+            except Exception as validator_error:
+                print(f"   ❌ Could not create validator: {validator_error}")
+                return None
 
             # Run validation
             results = validator.validate()
