@@ -69,7 +69,7 @@ class DesiredDatasetSchema:
 
 class FieldTypeDetector:
     """Pattern-based field type detection system."""
-    
+
     DETECTION_PATTERNS = [
         # Monetary/Currency fields
         FieldPattern(
@@ -78,7 +78,7 @@ class FieldTypeDetector:
             validation_rules={"min_value": 0, "max_value": 1000000},
             transformation_rules=["remove_currency_symbols", "convert_to_float"]
         ),
-        
+
         # Geographic coordinates
         FieldPattern(
             keywords=["latitude", "lat"],
@@ -92,7 +92,7 @@ class FieldTypeDetector:
             validation_rules={"min_value": -180, "max_value": 180},
             transformation_rules=["ensure_decimal_precision"]
         ),
-        
+
         # Administrative areas and codes
         FieldPattern(
             keywords=["community_area", "ward", "precinct", "district"],
@@ -100,7 +100,7 @@ class FieldTypeDetector:
             validation_rules={"min_value": 0, "max_value": 200},
             transformation_rules=["convert_to_integer", "handle_nulls_as_unknown"]
         ),
-        
+
         # ZIP codes
         FieldPattern(
             keywords=["zip", "postal"],
@@ -108,7 +108,7 @@ class FieldTypeDetector:
             validation_rules={"pattern": r"^\d{5}(-\d{4})?$"},
             transformation_rules=["standardize_zip_format", "handle_invalid_zips"]
         ),
-        
+
         # Date fields
         FieldPattern(
             keywords=["date", "created", "issued", "start", "end", "expiration"],
@@ -116,7 +116,7 @@ class FieldTypeDetector:
             validation_rules={"not_future": True, "not_before_1900": True},
             transformation_rules=["parse_flexible_dates", "handle_null_dates"]
         ),
-        
+
         # Status/Category fields
         FieldPattern(
             keywords=["status", "type", "category", "description"],
@@ -124,7 +124,7 @@ class FieldTypeDetector:
             validation_rules={"allowed_values": "detect_from_data"},
             transformation_rules=["standardize_categories", "handle_unknown_categories"]
         ),
-        
+
         # Identifiers
         FieldPattern(
             keywords=["id", "number", "account"],
@@ -133,16 +133,16 @@ class FieldTypeDetector:
             transformation_rules=["trim_whitespace", "standardize_format"]
         )
     ]
-    
+
     @classmethod
     def detect_field_type(cls, field_name: str, sample_data: Any = None) -> DesiredDataType:
         """Detect desired field type based on name patterns and sample data."""
         field_lower = field_name.lower()
-        
+
         for pattern in cls.DETECTION_PATTERNS:
             if any(keyword in field_lower for keyword in pattern.keywords):
                 return pattern.target_type
-                
+
         # Default fallback
         return DesiredDataType.STRING
 
@@ -154,7 +154,7 @@ class ChicagoDesiredSchemas:
         name="business_licenses",
         description="Chicago Business Licenses - Analysis Ready",
         primary_key="id",
-        date_field="license_start_date", 
+        date_field="license_start_date",
         area_field="community_area",
         area_name_field="community_area_name",
         quality_thresholds={
@@ -173,12 +173,12 @@ class ChicagoDesiredSchemas:
             DesiredFieldDefinition("id", DesiredDataType.STRING, "Unique record identifier", True, analysis_priority="critical"),
             DesiredFieldDefinition("license_id", DesiredDataType.STRING, "License ID number", True, analysis_priority="high"),
             DesiredFieldDefinition("account_number", DesiredDataType.STRING, "Account number", False, analysis_priority="low"),
-            DesiredFieldDefinition("site_number", DesiredDataType.STRING, "Site number", False, analysis_priority="low"),
+            DesiredFieldDefinition("site_number", DesiredDataType.CATEGORY, "Site number (categorized)", False, analysis_priority="low"),
 
             # Business information
             DesiredFieldDefinition("legal_name", DesiredDataType.STRING, "Legal business name", True, analysis_priority="high"),
             DesiredFieldDefinition("doing_business_as_name", DesiredDataType.STRING, "DBA name", False, analysis_priority="medium"),
-            DesiredFieldDefinition("license_code", DesiredDataType.STRING, "License code", False, analysis_priority="high"),
+            DesiredFieldDefinition("license_code", DesiredDataType.CATEGORY, "License code (categorized)", False, analysis_priority="high"),
             DesiredFieldDefinition("license_number", DesiredDataType.STRING, "License number", False, analysis_priority="medium"),
             DesiredFieldDefinition("license_description", DesiredDataType.CATEGORY, "License description (categorized)", True, analysis_priority="critical"),
             DesiredFieldDefinition("business_activity_id", DesiredDataType.STRING, "Business activity ID", False, analysis_priority="medium"),
@@ -197,7 +197,7 @@ class ChicagoDesiredSchemas:
             DesiredFieldDefinition("neighborhood", DesiredDataType.CATEGORY, "Neighborhood name", False, analysis_priority="medium"),
 
             # Geographic coordinates - CRITICAL for mapping
-            DesiredFieldDefinition("latitude", DesiredDataType.FLOAT, "Latitude coordinate (Chicago bounds)", False, 
+            DesiredFieldDefinition("latitude", DesiredDataType.FLOAT, "Latitude coordinate (Chicago bounds)", False,
                                  validation_rules={"min_value": 41.6, "max_value": 42.1}, analysis_priority="high"),
             DesiredFieldDefinition("longitude", DesiredDataType.FLOAT, "Longitude coordinate (Chicago bounds)", False,
                                  validation_rules={"min_value": -87.9, "max_value": -87.5}, analysis_priority="high"),
@@ -219,6 +219,12 @@ class ChicagoDesiredSchemas:
             DesiredFieldDefinition("license_start_date", DesiredDataType.DATE, "License start date", True, analysis_priority="critical"),
             DesiredFieldDefinition("expiration_date", DesiredDataType.DATE, "License expiration date", False, analysis_priority="high"),
             DesiredFieldDefinition("license_status", DesiredDataType.CATEGORY, "Current license status", True, analysis_priority="critical"),
+
+            # Additional fields for improved success rate
+            DesiredFieldDefinition("conditional_approval", DesiredDataType.BOOLEAN, "Conditional approval flag (Y/N)", False, analysis_priority="medium"),
+            DesiredFieldDefinition("ward_precinct", DesiredDataType.CATEGORY, "Ward-Precinct combination", False, analysis_priority="low"),
+            DesiredFieldDefinition("ssa", DesiredDataType.INTEGER, "Special Service Area number", False, analysis_priority="low"),
+            DesiredFieldDefinition("license_status_change_date", DesiredDataType.DATE, "Status change date", False, analysis_priority="low"),
         ]
     )
 
@@ -253,7 +259,7 @@ class ChicagoDesiredSchemas:
             # Dates - CRITICAL for timeline analysis
             DesiredFieldDefinition("application_start_date", DesiredDataType.DATE, "Application start date", False, analysis_priority="high"),
             DesiredFieldDefinition("issue_date", DesiredDataType.DATE, "Permit issue date", True, analysis_priority="critical"),
-            DesiredFieldDefinition("processing_time", DesiredDataType.INTEGER, "Processing time in days", False, 
+            DesiredFieldDefinition("processing_time", DesiredDataType.INTEGER, "Processing time in days", False,
                                  validation_rules={"min_value": 0, "max_value": 3650}, analysis_priority="high"),
 
             # Location information
@@ -283,7 +289,7 @@ class ChicagoDesiredSchemas:
         ]
     )
 
-    # CTA Boardings Desired Schema  
+    # CTA Boardings Desired Schema
     CTA_BOARDINGS = DesiredDatasetSchema(
         name="cta_boardings",
         description="Chicago Transit Authority Daily Boarding Totals - Analysis Ready",
@@ -350,12 +356,12 @@ class DesiredSchemaManager:
         """Generate a transformation plan comparing current vs desired types."""
         schema = DesiredSchemaManager.get_desired_schema(dataset_name)
         transformation_plan = {}
-        
+
         for field in schema.fields:
             if field.name in current_dtypes:
                 current_type = current_dtypes[field.name]
                 desired_type = field.desired_type.value
-                
+
                 if current_type != desired_type:
                     transformation_plan[field.name] = {
                         'current_type': current_type,
@@ -363,7 +369,7 @@ class DesiredSchemaManager:
                         'validation_rules': field.validation_rules,
                         'priority': field.analysis_priority
                     }
-        
+
         return transformation_plan
 
 # Convenience functions for common operations
@@ -379,8 +385,8 @@ def get_transformation_priority_fields(dataset_name: str) -> Dict[str, List[str]
     """Get fields grouped by transformation priority."""
     schema = DesiredSchemaManager.get_desired_schema(dataset_name)
     priority_fields = {"critical": [], "high": [], "medium": [], "low": []}
-    
+
     for field in schema.fields:
         priority_fields[field.analysis_priority].append(field.name)
-    
+
     return priority_fields

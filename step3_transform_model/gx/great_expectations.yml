@@ -88,5 +88,18 @@ fluent_datasources:
   chicago_smb_pandas_datasource:
     type: pandas
     id: 5bbe820d-ec3f-4883-88d1-505d90ea8d34
+    assets:
+      business_licenses:
+        type: dataframe
+        id: 7d627421-ec59-40c5-a010-a50fcbb77c64
+        batch_metadata: {}
+      building_permits:
+        type: dataframe
+        id: 482446f9-a6f7-418a-9b24-c485aa7878d1
+        batch_metadata: {}
+      cta_boardings:
+        type: dataframe
+        id: 18a70295-d778-49a0-95e9-4824221fddbe
+        batch_metadata: {}
 analytics_enabled:
 data_context_id: 75faff21-f1a3-4df5-8ec9-96844725b9fe

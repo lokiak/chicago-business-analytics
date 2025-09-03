@@ -349,6 +349,8 @@ def main():
     overwrite_with_dataframe(ws4, summary_df)
 
     # Write full expanded datasets using dynamic updates (upsert)
+    raw_datasets = {}
+
     if not lic_df.empty:
         logger.info(f"Upserting business licenses dataset with {len(lic_df)} records and {len(lic_df.columns)} columns...")
         # Flatten location data before writing
@@ -357,6 +359,7 @@ def main():
 
         # Upsert using unique identifier (id field)
         upsert_to_worksheet(lic_full_ws, lic_df_flat, key_columns=['id'])
+        raw_datasets['business_licenses'] = lic_df_flat
 
     if settings.enable_permits and not p_df.empty:
         logger.info(f"Upserting building permits dataset with {len(p_df)} records and {len(p_df.columns)} columns...")
@@ -366,6 +369,7 @@ def main():
 
         # Upsert using unique identifier (id field)
         upsert_to_worksheet(permits_full_ws, p_df_flat, key_columns=['id'])
+        raw_datasets['building_permits'] = p_df_flat
 
     if settings.enable_cta and not cta_df.empty:
         logger.info(f"Upserting CTA dataset with {len(cta_df)} records and {len(cta_df.columns)} columns...")
@@ -373,6 +377,41 @@ def main():
 
         # Upsert using service date as unique identifier
         upsert_to_worksheet(cta_full_ws, cta_df, key_columns=['service_date'])
+        raw_datasets['cta_boardings'] = cta_df
+
+    # NEW: Great Expectations Data Cleaning Integration
+    if raw_datasets:
+        logger.info("🚀 Running Great Expectations data cleaning pipeline...")
+        try:
+            # Import GX integration
+            sys.path.append(str(Path(__file__).parent.parent / "step3_transform_model"))
+            from pipeline_integration import enhanced_clean_and_save
+
+            # Run GX cleaning and save to sheets
+            cleaned_datasets, cleaning_report = enhanced_clean_and_save(
+                raw_datasets,
+                use_gx=True,
+                save_to_sheets=True
+            )
+
+            logger.info(f"✅ GX cleaning completed successfully!")
+            logger.info(f"   Strategy: {cleaning_report.get('strategy_used', 'Unknown')}")
+            logger.info(f"   Datasets processed: {len(cleaning_report.get('datasets_processed', []))}")
+            logger.info(f"   Sheets saved: {cleaning_report.get('save_success', False)}")
+
+            # Log cleaning results
+            for dataset_result in cleaning_report.get('datasets_processed', []):
+                name = dataset_result['name']
+                success = "✅" if dataset_result['success'] else "❌"
+                original_shape = dataset_result['original_shape']
+                cleaned_shape = dataset_result['cleaned_shape']
+                logger.info(f"   {success} {name}: {original_shape} → {cleaned_shape}")
+
+        except ImportError:
+            logger.warning("⚠️  Great Expectations modules not available - skipping data cleaning")
+        except Exception as e:
+            logger.error(f"❌ GX data cleaning failed: {e}")
+            logger.error("   Raw data has been saved, but cleaning step failed")
 
     # Brief generation temporarily disabled (functionality moved to step5)
     logger.info("Brief generation skipped - will be implemented in step5_visualize_report")

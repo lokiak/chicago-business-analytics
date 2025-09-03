@@ -1,0 +1,68 @@
+{
+  "expectations": [
+    {
+      "id": "f5534ddd-e5ce-44e3-9743-3e2772e1164f",
+      "kwargs": {
+        "min_value": 1
+      },
+      "meta": {},
+      "type": "expect_table_row_count_to_be_between"
+    },
+    {
+      "id": "6625bd8f-0764-478b-b2f7-104c53f68c91",
+      "kwargs": {
+        "column": "service_date"
+      },
+      "meta": {},
+      "type": "expect_column_to_exist"
+    },
+    {
+      "id": "8d3f9bdf-faf5-4cbe-9427-9d3e7e64e16f",
+      "kwargs": {
+        "column": "service_date"
+      },
+      "meta": {},
+      "type": "expect_column_values_to_not_be_null"
+    },
+    {
+      "id": "f5037828-1270-4b43-be68-bdad217f766d",
+      "kwargs": {
+        "column": "service_date",
+        "type_": "datetime64"
+      },
+      "meta": {},
+      "type": "expect_column_values_to_be_of_type"
+    },
+    {
+      "id": "178e0d55-986b-44a0-a8c2-5d0d9c2a73a4",
+      "kwargs": {
+        "column": "total_rides"
+      },
+      "meta": {},
+      "type": "expect_column_to_exist"
+    },
+    {
+      "id": "b2b9d9dc-55ba-43fc-bbcc-e8642eaf9e07",
+      "kwargs": {
+        "column": "total_rides"
+      },
+      "meta": {},
+      "type": "expect_column_values_to_not_be_null"
+    },
+    {
+      "id": "3d4e718a-a2b3-4ada-b2b2-d71091b4db3d",
+      "kwargs": {
+        "column": "total_rides",
+        "type_": "int"
+      },
+      "meta": {},
+      "type": "expect_column_values_to_be_of_type"
+    }
+  ],
+  "id": "c8d08b64-a288-46a2-99ac-744974d9ae66",
+  "meta": {
+    "great_expectations_version": "1.5.10"
+  },
+  "name": "cta_boardings_expectations",
+  "notes": null
+}

@@ -1,0 +1,76 @@
+{
+  "expectations": [
+    {
+      "id": "1d0aa878-b12f-4799-a1c9-8f105ec212cb",
+      "kwargs": {
+        "min_value": 1
+      },
+      "meta": {},
+      "type": "expect_table_row_count_to_be_between"
+    },
+    {
+      "id": "feacbd70-6b2a-4427-98ab-bb25558176b2",
+      "kwargs": {
+        "column": "id"
+      },
+      "meta": {},
+      "type": "expect_column_to_exist"
+    },
+    {
+      "id": "85bf98df-11d5-44eb-a9fe-b7a510a9d1a0",
+      "kwargs": {
+        "column": "id"
+      },
+      "meta": {},
+      "type": "expect_column_values_to_not_be_null"
+    },
+    {
+      "id": "7d0a8cc3-f6d0-44c1-b1ee-6e4e005050ad",
+      "kwargs": {
+        "column": "permit_status"
+      },
+      "meta": {},
+      "type": "expect_column_to_exist"
+    },
+    {
+      "id": "6ce45ce1-d9a7-4edd-a93c-aba6f1558c88",
+      "kwargs": {
+        "column": "permit_status"
+      },
+      "meta": {},
+      "type": "expect_column_values_to_not_be_null"
+    },
+    {
+      "id": "31ecb3c0-5b11-44b6-a1b8-5771586ca686",
+      "kwargs": {
+        "column": "total_fee"
+      },
+      "meta": {},
+      "type": "expect_column_to_exist"
+    },
+    {
+      "id": "7bf0a6fe-ece2-49db-b41b-f48b0b44215a",
+      "kwargs": {
+        "column": "total_fee",
+        "type_": "float"
+      },
+      "meta": {},
+      "type": "expect_column_values_to_be_of_type"
+    },
+    {
+      "id": "8b75d2e2-a233-4486-9b81-ad0af5ee0ab1",
+      "kwargs": {
+        "column": "total_fee",
+        "min_value": 0.0
+      },
+      "meta": {},
+      "type": "expect_column_values_to_be_between"
+    }
+  ],
+  "id": "f18dc96f-9726-4650-8d56-e1ca9028cc35",
+  "meta": {
+    "great_expectations_version": "1.5.10"
+  },
+  "name": "building_permits_expectations",
+  "notes": null
+}

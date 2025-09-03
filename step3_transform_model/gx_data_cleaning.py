@@ -97,10 +97,12 @@ class SmartDataCleaner:
             logger.warning(f"⚠️  Could not setup pandas datasource: {e}")
 
     def _create_batch_request(self, df: pd.DataFrame, dataset_name: str):
-        """Create a batch request for DataFrame validation."""
+        """Create a batch request for DataFrame validation using correct GX 1.x API."""
         try:
-            # Try to get or create datasource
+            # Use the correct GX 1.x approach for runtime data
             datasource_name = "chicago_smb_pandas_datasource"
+
+            # Try to get or create datasource
             try:
                 datasource = self.context.data_sources.get(datasource_name)
             except:
@@ -112,15 +114,46 @@ class SmartDataCleaner:
             except:
                 asset = datasource.add_dataframe_asset(name=dataset_name)
 
-            return asset.build_batch_request(dataframe=df)
+            # Create batch request with correct GX 1.x API - options parameter with dataframe key
+            return asset.build_batch_request(options={"dataframe": df})
 
         except Exception as e:
-            # Fallback approach - use a simple dictionary-based batch request
-            return {
-                "datasource_name": "chicago_smb_pandas_datasource",
-                "data_asset_name": dataset_name,
-                "batch_data": df
-            }
+            logger.warning(f"Failed to create batch request via datasource: {e}")
+            logger.error(f"Full error details: {e}")
+            return None
+
+    def _standardize_id_field(self, value, field_name: str) -> str:
+        """Standardize mixed-type ID fields for consistency."""
+        try:
+            if pd.isna(value) or value == '' or str(value).lower() in ['none', 'nan']:
+                return None
+
+            # Convert to string and clean
+            str_val = str(value).strip()
+
+            # Handle pipe-separated multiple IDs (like business_activity_id)
+            if '|' in str_val:
+                # Keep as-is for multiple IDs, just clean whitespace
+                parts = [part.strip() for part in str_val.split('|')]
+                return ' | '.join(parts)
+
+            # For permit numbers, preserve alpha prefixes
+            if field_name.lower() in ['permit_', 'permit_number'] and str_val.startswith(('B', 'E', 'P', 'N')):
+                return str_val.upper()
+
+            # For numeric-like IDs, standardize format but keep as string
+            if str_val.replace('.', '').replace('-', '').isdigit():
+                # Remove trailing .0 if present
+                if str_val.endswith('.0'):
+                    str_val = str_val[:-2]
+                return str_val
+
+            # Default: return cleaned string
+            return str_val
+
+        except Exception:
+            # Fallback: convert to string
+            return str(value) if value is not None else None
 
     def detect_and_plan_transformations(self, df: pd.DataFrame, dataset_name: str) -> Dict[str, Any]:
         """
@@ -353,14 +386,76 @@ class SmartDataCleaner:
 
             # ZIP code transformations
             elif desired_type == 'zipcode':
-                # Standardize ZIP codes
+                # Standardize ZIP codes and convert to category
                 df[field] = (df[field].astype(str)
                                    .str.extract(r'(\d{5})')[0]
                                    .fillna('00000'))
+                # Convert to category since ZIP codes have limited unique values
+                df[field] = df[field].astype('category')
                 return {
                     'success': True,
                     'dataframe': df,
-                    'transformation': f'Standardized ZIP code format'
+                    'transformation': f'Standardized ZIP code format and converted to category'
+                }
+
+            # String transformations
+            elif desired_type == 'string':
+                # Handle mixed-type ID fields intelligently
+                if any(keyword in field.lower() for keyword in ['id', 'permit', 'license_number', 'account']):
+                    # Special handling for ID fields with mixed types
+                    df[field] = df[field].apply(lambda x: self._standardize_id_field(x, field))
+                else:
+                    # Regular string cleaning
+                    df[field] = (df[field].astype(str)
+                                       .str.strip()
+                                       .replace('nan', '')
+                                       .replace('None', ''))
+                    # Replace empty strings with None for better data quality
+                    df[field] = df[field].replace('', None)
+                return {
+                    'success': True,
+                    'dataframe': df,
+                    'transformation': f'Converted to cleaned string'
+                }
+
+            # Float transformations
+            elif desired_type == 'float64':
+                # Handle empty/null values in geographic coordinates
+                if any(keyword in field.lower() for keyword in ['latitude', 'longitude', 'lat', 'lng', 'coord']):
+                    # Replace empty strings with NaN for geographic fields
+                    df[field] = df[field].replace('', None)
+                    df[field] = pd.to_numeric(df[field], errors='coerce')
+                    # Keep as float64 with NaN for missing coordinates
+                else:
+                    # Regular numeric conversion
+                    df[field] = pd.to_numeric(df[field], errors='coerce').astype('float64')
+                return {
+                    'success': True,
+                    'dataframe': df,
+                    'transformation': f'Converted to float64'
+                }
+
+            # Boolean transformations
+            elif desired_type == 'bool':
+                # Convert Y/N, True/False, 1/0 to boolean
+                def convert_to_bool(val):
+                    if pd.isna(val) or val == '' or str(val).lower() in ['none', 'nan']:
+                        return None
+                    val_str = str(val).lower().strip()
+                    if val_str in ['y', 'yes', 'true', '1', 'active']:
+                        return True
+                    elif val_str in ['n', 'no', 'false', '0', 'inactive']:
+                        return False
+                    else:
+                        return None
+
+                df[field] = df[field].apply(convert_to_bool)
+                # Convert to nullable boolean
+                df[field] = df[field].astype('boolean')
+                return {
+                    'success': True,
+                    'dataframe': df,
+                    'transformation': f'Converted to boolean'
                 }
 
             else:
@@ -424,19 +519,23 @@ class SmartDataCleaner:
 
             # Delete existing suite if it exists
             try:
-                self.context.delete_expectation_suite(suite_name)
+                # Use correct GX 1.x API for deletion
+                self.context.suites.delete(suite_name)
             except:
                 pass
 
             try:
-                suite = self.context.add_or_update_expectation_suite(suite_name)
-            except AttributeError:
-                # Fallback for older GX versions
+                # Use correct GX 1.x API
+                import great_expectations as gx
+                suite = self.context.suites.add_or_update(gx.ExpectationSuite(name=suite_name))
+            except Exception as e:
+                logger.warning(f"Could not create expectation suite via add_or_update: {e}")
                 try:
-                    suite = self.context.create_expectation_suite(suite_name)
+                    # Try to get existing suite
+                    suite = self.context.suites.get(suite_name)
                 except:
-                    # If suite already exists, get it
-                    suite = self.context.get_expectation_suite(suite_name)
+                    # Create new suite
+                    suite = self.context.suites.add(gx.ExpectationSuite(name=suite_name))
 
             # Get desired schema for creating expectations
             desired_schema = DesiredSchemaManager.get_desired_schema(dataset_name)
@@ -444,8 +543,9 @@ class SmartDataCleaner:
             # Add basic expectations
             expectations_added = 0
 
-            # Table-level expectations
-            suite.expect_table_row_count_to_be_between(min_value=1)
+            # Table-level expectations using correct GX 1.x API
+            import great_expectations as gx
+            suite.add_expectation(gx.expectations.ExpectTableRowCountToBeBetween(min_value=1))
             expectations_added += 1
 
             # Field-level expectations
@@ -454,41 +554,41 @@ class SmartDataCleaner:
                     continue
 
                 # Column exists expectation
-                suite.expect_column_to_exist(field.name)
+                suite.add_expectation(gx.expectations.ExpectColumnToExist(column=field.name))
                 expectations_added += 1
 
                 # Required field expectations
                 if field.required and not field.nullable:
-                    suite.expect_column_values_to_not_be_null(field.name)
+                    suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column=field.name))
                     expectations_added += 1
 
                 # Type-specific expectations
                 if field.desired_type == DesiredDataType.INTEGER:
-                    suite.expect_column_values_to_be_of_type(field.name, "int")
+                    suite.add_expectation(gx.expectations.ExpectColumnValuesToBeOfType(column=field.name, type_="int"))
                     expectations_added += 1
 
                 elif field.desired_type == DesiredDataType.DATE:
-                    suite.expect_column_values_to_be_of_type(field.name, "datetime64")
+                    suite.add_expectation(gx.expectations.ExpectColumnValuesToBeOfType(column=field.name, type_="datetime64"))
                     expectations_added += 1
 
                 elif field.desired_type == DesiredDataType.CURRENCY:
-                    suite.expect_column_values_to_be_of_type(field.name, "float")
-                    suite.expect_column_values_to_be_between(field.name, min_value=0)
+                    suite.add_expectation(gx.expectations.ExpectColumnValuesToBeOfType(column=field.name, type_="float"))
+                    suite.add_expectation(gx.expectations.ExpectColumnValuesToBeBetween(column=field.name, min_value=0))
                     expectations_added += 2
 
                 # Validation rules from field definition
                 if field.validation_rules:
                     for rule_name, rule_value in field.validation_rules.items():
                         if rule_name == "min_value" and rule_name == "max_value":
-                            suite.expect_column_values_to_be_between(
-                                field.name,
+                            suite.add_expectation(gx.expectations.ExpectColumnValuesToBeBetween(
+                                column=field.name,
                                 min_value=field.validation_rules.get("min_value"),
                                 max_value=field.validation_rules.get("max_value")
-                            )
+                            ))
                             expectations_added += 1
 
-            # Save the suite
-            self.context.save_expectation_suite(suite)
+            # Save the suite using GX 1.x API
+            # Note: In GX 1.x, suites are automatically saved when added to context
 
             print(f"   ✅ Created suite with {expectations_added} expectations")
             return suite
@@ -513,10 +613,16 @@ class SmartDataCleaner:
 
             # Create validator using GX 1.x simplified approach
             try:
-                # Use the simplified validator creation approach
+                # Create batch request
+                batch_request = self._create_batch_request(df, dataset_name)
+                if batch_request is None:
+                    print(f"   ❌ Could not create batch request")
+                    return None
+
+                # Create validator
                 validator = self.context.get_validator(
-                    batch_request=self._create_batch_request(df, dataset_name),
-                    expectation_suite_name=suite.expectation_suite_name
+                    batch_request=batch_request,
+                    expectation_suite_name=suite.name
                 )
             except Exception as validator_error:
                 print(f"   ❌ Could not create validator: {validator_error}")
@@ -537,7 +643,8 @@ class SmartDataCleaner:
                 print("   ⚠️  Failed expectations:")
                 for result in results.results:
                     if not result.success:
-                        expectation = result.expectation_config.expectation_type
+                        # Use correct GX 1.x attribute 'type' instead of 'expectation_type'
+                        expectation = result.expectation_config.type
                         column = result.expectation_config.kwargs.get('column', 'table')
                         print(f"      {column}: {expectation}")
 
