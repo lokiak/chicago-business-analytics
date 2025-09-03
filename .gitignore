@@ -182,9 +182,9 @@ cython_debug/
 .abstra/
 
 # Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
+#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore
 #  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
+#  and can be added to the global gitignore or merged into this file. However, if you prefer,
 #  you could uncomment the following to ignore the entire vscode folder
 # .vscode/
 
@@ -205,3 +205,22 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Great Expectations
+# Exclude generated expectation files and validation results
+step3_transform_model/gx/expectations/*.json
+step3_transform_model/gx/uncommitted/
+step3_transform_model/gx/validations/
+step3_transform_model/gx/checkpoints/
+
+# Data quality analysis outputs
+data/quality_analysis/*.pkl
+data/quality_analysis/*.json
+data/quality_analysis/data_quality_batch_*/
+
+# Processed data files (can be regenerated)
+step3_transform_model/data/processed/*.pkl
+
+# Keep config but exclude generated files
+!step3_transform_model/gx/great_expectations.yml
+!step3_transform_model/gx/.gitignore

@@ -1,9 +1,0 @@
-{
-  "expectations": [],
-  "id": "44545a93-cb0e-493d-858d-1657e2164438",
-  "meta": {
-    "great_expectations_version": "1.5.10"
-  },
-  "name": "test_business_licenses_expectations",
-  "notes": null
-}
