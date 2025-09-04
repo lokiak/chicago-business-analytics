@@ -1,0 +1,257 @@
+Based on your desired_schema.py, here's how I'd write Google Apps Script code that automatically formats Google Sheets columns according to your schema definitions:
+
+  /**
+   * Chicago SMB Market Radar - Google Sheets Auto-Formatter
+   * Applies formatting based on desired_schema.py definitions
+   */
+
+  // Dataset column mappings based on desired_schema.py
+  const SCHEMA_FORMATTING = {
+    'business_licenses': {
+      // Currency fields
+      currency: [
+        'building_fee_paid', 'zoning_fee_paid', 'other_fee_paid', 'subtotal_paid',
+        'building_fee_unpaid', 'zoning_fee_unpaid', 'other_fee_unpaid', 'subtotal_unpaid',
+        'building_fee_waived', 'zoning_fee_waived', 'other_fee_waived', 'subtotal_waived',
+        'total_fee'
+      ],
+      // Date fields
+      dates: [
+        'application_created_date', 'application_requirements_complete', 'payment_date',
+        'license_approved_for_issuance', 'date_issued', 'license_start_date', 'expiration_date'
+      ],
+      // ZIP codes (preserve leading zeros)
+      zipcodes: ['zip_code'],
+      // Integer fields
+      integers: ['ward', 'precinct', 'police_district', 'community_area'],
+      // Coordinates (high precision)
+      coordinates: ['latitude', 'longitude', 'location_latitude', 'location_longitude'],
+      // Categories (text formatting)
+      categories: [
+        'license_description', 'business_activity', 'city', 'state', 'community_area_name',
+        'neighborhood', 'application_type', 'license_status'
+      ]
+    },
+
+    'building_permits': {
+      currency: [
+        'building_fee_paid', 'zoning_fee_paid', 'other_fee_paid', 'subtotal_paid',
+        'building_fee_unpaid', 'zoning_fee_unpaid', 'other_fee_unpaid', 'subtotal_unpaid',
+        'building_fee_waived', 'zoning_fee_waived', 'other_fee_waived', 'subtotal_waived',
+        'total_fee'
+      ],
+      dates: ['application_start_date', 'issue_date'],
+      integers: ['community_area', 'processing_time'],
+      categories: ['permit_status', 'permit_milestone', 'permit_type', 'review_type', 'work_type']
+    },
+
+    'cta_boardings': {
+      dates: ['service_date'],
+      integers: ['total_rides']
+    }
+  };
+
+  /**
+   * Main formatting function - call this after data import
+   */
+  function formatAllSheets() {
+    const sheets = SpreadsheetApp.getActiveSpreadsheet().getSheets();
+
+    sheets.forEach(sheet => {
+      const sheetName = sheet.getName().toLowerCase();
+
+      // Find matching dataset
+      for (const [datasetName, formatting] of Object.entries(SCHEMA_FORMATTING)) {
+        if (sheetName.includes(datasetName)) {
+          console.log(`Formatting sheet: ${sheet.getName()} as ${datasetName}`);
+          formatDatasetSheet(sheet, formatting);
+          break;
+        }
+      }
+    });
+  }
+
+  /**
+   * Format a specific dataset sheet
+   */
+  function formatDatasetSheet(sheet, formatting) {
+    const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+    // Currency fields - $#,##0.00
+    if (formatting.currency) {
+      formatting.currency.forEach(fieldName => {
+        const colIndex = headerRow.indexOf(fieldName) + 1;
+        if (colIndex > 0) {
+          const range = sheet.getRange(2, colIndex, sheet.getLastRow() - 1, 1);
+          range.setNumberFormat('$#,##0.00');
+          console.log(`Formatted ${fieldName} as currency`);
+        }
+      });
+    }
+
+    // Date fields - MM/dd/yyyy
+    if (formatting.dates) {
+      formatting.dates.forEach(fieldName => {
+        const colIndex = headerRow.indexOf(fieldName) + 1;
+        if (colIndex > 0) {
+          const range = sheet.getRange(2, colIndex, sheet.getLastRow() - 1, 1);
+          range.setNumberFormat('MM/dd/yyyy');
+          console.log(`Formatted ${fieldName} as date`);
+        }
+      });
+    }
+
+    // ZIP codes - preserve leading zeros
+    if (formatting.zipcodes) {
+      formatting.zipcodes.forEach(fieldName => {
+        const colIndex = headerRow.indexOf(fieldName) + 1;
+        if (colIndex > 0) {
+          const range = sheet.getRange(2, colIndex, sheet.getLastRow() - 1, 1);
+          range.setNumberFormat('00000');
+          console.log(`Formatted ${fieldName} as ZIP code`);
+        }
+      });
+    }
+
+    // Integer fields - #,##0
+    if (formatting.integers) {
+      formatting.integers.forEach(fieldName => {
+        const colIndex = headerRow.indexOf(fieldName) + 1;
+        if (colIndex > 0) {
+          const range = sheet.getRange(2, colIndex, sheet.getLastRow() - 1, 1);
+          range.setNumberFormat('#,##0');
+          console.log(`Formatted ${fieldName} as integer`);
+        }
+      });
+    }
+
+    // Coordinates - high precision decimals
+    if (formatting.coordinates) {
+      formatting.coordinates.forEach(fieldName => {
+        const colIndex = headerRow.indexOf(fieldName) + 1;
+        if (colIndex > 0) {
+          const range = sheet.getRange(2, colIndex, sheet.getLastRow() - 1, 1);
+          range.setNumberFormat('#,##0.000000');
+          console.log(`Formatted ${fieldName} as coordinate`);
+        }
+      });
+    }
+
+    // Categories - text format with background color
+    if (formatting.categories) {
+      formatting.categories.forEach(fieldName => {
+        const colIndex = headerRow.indexOf(fieldName) + 1;
+        if (colIndex > 0) {
+          const range = sheet.getRange(2, colIndex, sheet.getLastRow() - 1, 1);
+          range.setNumberFormat('@'); // Force text
+          range.setBackground('#f8f9fa'); // Light gray background
+          console.log(`Formatted ${fieldName} as category`);
+        }
+      });
+    }
+
+    // Format headers
+    const headerRange = sheet.getRange(1, 1, 1, sheet.getLastColumn());
+    headerRange.setFontWeight('bold');
+    headerRange.setBackground('#4285f4');
+    headerRange.setFontColor('white');
+  }
+
+  /**
+   * Auto-trigger: Run when sheets are edited
+   */
+  function onEdit(e) {
+    // Only run if significant changes (e.g., new data import)
+    if (e.range.getNumRows() > 10) {
+      formatAllSheets();
+    }
+  }
+
+  /**
+   * Format specific dataset by name
+   */
+  function formatBusinessLicenses() {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Business_Licenses_Full');
+    if (sheet) {
+      formatDatasetSheet(sheet, SCHEMA_FORMATTING.business_licenses);
+    }
+  }
+
+  function formatBuildingPermits() {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Building_Permits_Full');
+    if (sheet) {
+      formatDatasetSheet(sheet, SCHEMA_FORMATTING.building_permits);
+    }
+  }
+
+  function formatCTABoardings() {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CTA_Full');
+    if (sheet) {
+      formatDatasetSheet(sheet, SCHEMA_FORMATTING.cta_boardings);
+    }
+  }
+
+  Key Features Matching Your Schema:
+
+  1. Currency Fields → $#,##0.00 format (all fee fields)
+  2. Date Fields → MM/dd/yyyy format (all date fields)
+  3. ZIP Codes → 00000 format (preserves leading zeros)
+  4. Integers → #,##0 format (ward, community_area, etc.)
+  5. Coordinates → #,##0.000000 format (high precision)
+  6. Categories → Text format with background color
+
+  Setup Instructions:
+
+  1. Open Google Apps Script: script.google.com
+  2. Create new project linked to your spreadsheet
+  3. Paste the code above
+  4. Set up trigger: Run formatAllSheets() after data imports
+  5. Test: Run formatBusinessLicenses() to test one dataset
+
+  This automatically applies the correct formatting based on your DesiredDataType definitions, ensuring your analysis-ready data displays properly in Google Sheets!
+
+> Does this script ensure that: ID fields (id, license_id, account_number, license_number)
+  Name fields (legal_name, doing_business_as_name)
+  Address fields (address, location_human_address)
+  Activity IDs (business_activity_id) remain as strings?
+
+⏺ Looking at the Google Apps Script I provided, NO - it doesn't explicitly handle string fields. The script only formats specific data types (currency, dates, integers, etc.) but doesn't force text
+  formatting for critical string fields.
+
+  Based on your updated schema, here's the missing piece that needs to be added:
+
+  // Add this to the SCHEMA_FORMATTING object:
+  'business_licenses': {
+    // ... existing formatting ...
+
+    // STRING fields - force text format to prevent auto-conversion
+    strings: [
+      'id', 'license_id', 'account_number', 'license_number',
+      'legal_name', 'doing_business_as_name', 'address',
+      'location_human_address', 'business_activity_id'
+    ],
+
+    // ... rest of existing formatting ...
+  }
+
+  And add this to the formatDatasetSheet function:
+
+  // String/Text fields - force text format to prevent auto-conversion
+  if (formatting.strings) {
+    formatting.strings.forEach(fieldName => {
+      const colIndex = headerRow.indexOf(fieldName) + 1;
+      if (colIndex > 0) {
+        const range = sheet.getRange(2, colIndex, sheet.getLastRow() - 1, 1);
+        range.setNumberFormat('@'); // @ forces text format
+        console.log(`Formatted ${fieldName} as text`);
+      }
+    });
+  }
+
+  Why this matters:
+  - ID fields like license_id might get converted to scientific notation (1.23E+08)
+  - Account numbers could lose leading zeros
+  - Names with numbers might get auto-formatted incorrectly
+  - Addresses starting with numbers could become dates/numbers
+
+  The @ format in Google Sheets forces text interpretation, preventing any automatic conversions that could corrupt your string data.
