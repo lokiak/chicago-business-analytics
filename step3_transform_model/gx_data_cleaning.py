@@ -18,6 +18,17 @@ import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 import sys
+
+# Import monitoring system
+try:
+    from .gx_monitoring import GXPipelineMonitor, monitor_pipeline, PipelineMetrics
+    MONITORING_AVAILABLE = True
+except ImportError:
+    try:
+        from gx_monitoring import GXPipelineMonitor, monitor_pipeline, PipelineMetrics
+        MONITORING_AVAILABLE = True
+    except ImportError:
+        MONITORING_AVAILABLE = False
 import logging
 import re
 from datetime import datetime
@@ -49,11 +60,21 @@ class SmartDataCleaner:
     to automatically clean and validate Chicago SMB data.
     """
 
-    def __init__(self, gx_context_path: Optional[str] = None):
+    def __init__(self, gx_context_path: Optional[str] = None, enable_monitoring: bool = True):
         """Initialize the smart data cleaner."""
         self.gx_context_path = gx_context_path or str(Path(__file__).parent / "gx")
         self.context = None
         self.cleaning_history = []
+
+        # Initialize monitoring if available
+        self.enable_monitoring = enable_monitoring and MONITORING_AVAILABLE
+        if self.enable_monitoring:
+            self.monitor = GXPipelineMonitor("data/monitoring")
+            logger.info("🔍 Monitoring enabled for GX pipeline")
+        else:
+            self.monitor = None
+            if enable_monitoring and not MONITORING_AVAILABLE:
+                logger.warning("⚠️ Monitoring requested but not available")
 
         if GX_AVAILABLE:
             self._setup_gx_context()
@@ -263,71 +284,110 @@ class SmartDataCleaner:
         Returns:
             Cleaned DataFrame
         """
-        print(f"\n🧹 EXECUTING SMART CLEANING: {dataset_name.upper()}")
-        print("=" * 50)
+        # Start monitoring if enabled
+        execution_id = None
+        if self.enable_monitoring:
+            execution_id = self.monitor.start_pipeline_monitoring(dataset_name)
+            self.monitor.log_data_metrics(execution_id, df)
 
-        # Create transformation plan
-        plan = self.detect_and_plan_transformations(df, dataset_name)
+        try:
+            print(f"\n🧹 EXECUTING SMART CLEANING: {dataset_name.upper()}")
+            print("=" * 50)
 
-        # Start with a copy
-        cleaned_df = df.copy()
-        transformation_log = []
+            # Create transformation plan
+            plan = self.detect_and_plan_transformations(df, dataset_name)
 
-        # Execute transformations in priority order
-        transformations = plan.get('transformation_plan', {})
+            # Start with a copy
+            cleaned_df = df.copy()
+            transformation_log = []
 
-        # Group by priority
-        priority_groups = {'critical': [], 'high': [], 'medium': [], 'low': []}
-        for field, details in transformations.items():
-            priority = details.get('priority', 'medium')
-            priority_groups[priority].append((field, details))
+            # Execute transformations in priority order
+            transformations = plan.get('transformation_plan', {})
 
-        # Execute in priority order
-        for priority in ['critical', 'high', 'medium', 'low']:
-            if priority_groups[priority]:
-                print(f"\n🔧 Applying {priority.upper()} priority transformations...")
+            # Group by priority
+            priority_groups = {'critical': [], 'high': [], 'medium': [], 'low': []}
+            for field, details in transformations.items():
+                priority = details.get('priority', 'medium')
+                priority_groups[priority].append((field, details))
 
-                for field, details in priority_groups[priority]:
-                    result = self._apply_field_transformation(
-                        cleaned_df, field, details, dataset_name
-                    )
+            # Execute in priority order
+            for priority in ['critical', 'high', 'medium', 'low']:
+                if priority_groups[priority]:
+                    print(f"\n🔧 Applying {priority.upper()} priority transformations...")
 
-                    if result['success']:
-                        cleaned_df = result['dataframe']
-                        transformation_log.append({
-                            'field': field,
-                            'transformation': result['transformation'],
-                            'priority': priority,
-                            'success': True
-                        })
-                        print(f"   ✅ {field}: {result['transformation']}")
-                    else:
-                        transformation_log.append({
-                            'field': field,
-                            'error': result['error'],
-                            'priority': priority,
-                            'success': False
-                        })
-                        print(f"   ❌ {field}: {result['error']}")
+                    for field, details in priority_groups[priority]:
+                        result = self._apply_field_transformation(
+                            cleaned_df, field, details, dataset_name
+                        )
 
-        # Apply business rules validation
-        cleaned_df = self._apply_business_rules(cleaned_df, dataset_name)
+                        if result['success']:
+                            cleaned_df = result['dataframe']
+                            transformation_log.append({
+                                'field': field,
+                                'transformation': result['transformation'],
+                                'priority': priority,
+                                'success': True
+                            })
+                            print(f"   ✅ {field}: {result['transformation']}")
+                        else:
+                            transformation_log.append({
+                                'field': field,
+                                'error': result['error'],
+                                'priority': priority,
+                                'success': False
+                            })
+                            print(f"   ❌ {field}: {result['error']}")
 
-        # Store cleaning history
-        self.cleaning_history.append({
-            'dataset_name': dataset_name,
-            'timestamp': datetime.now(),
-            'original_shape': df.shape,
-            'cleaned_shape': cleaned_df.shape,
-            'transformations': transformation_log
-        })
+            # Apply business rules validation
+            cleaned_df = self._apply_business_rules(cleaned_df, dataset_name)
 
-        print(f"\n✅ SMART CLEANING COMPLETE")
-        print(f"   Original: {df.shape[0]} rows, {df.shape[1]} columns")
-        print(f"   Cleaned:  {cleaned_df.shape[0]} rows, {cleaned_df.shape[1]} columns")
-        print(f"   Successful transformations: {sum(1 for t in transformation_log if t['success'])}")
+            # Store cleaning history
+            self.cleaning_history.append({
+                'dataset_name': dataset_name,
+                'timestamp': datetime.now(),
+                'original_shape': df.shape,
+                'cleaned_shape': cleaned_df.shape,
+                'transformations': transformation_log
+            })
 
-        return cleaned_df
+            print(f"\n✅ SMART CLEANING COMPLETE")
+            print(f"   Original: {df.shape[0]} rows, {df.shape[1]} columns")
+            print(f"   Cleaned:  {cleaned_df.shape[0]} rows, {cleaned_df.shape[1]} columns")
+
+            successful_transformations = sum(1 for t in transformation_log if t['success'])
+            total_transformations = len(transformation_log)
+            success_rate = (successful_transformations / total_transformations * 100) if total_transformations > 0 else 0
+
+            print(f"   Successful transformations: {successful_transformations}")
+            print(f"   Success rate: {success_rate:.1f}% ({successful_transformations}/{total_transformations})")
+
+            # Log monitoring metrics if enabled
+            if self.enable_monitoring and execution_id:
+                self.monitor.log_data_metrics(execution_id, df, cleaned_df)
+                self.monitor.log_transformation_results(execution_id, total_transformations, successful_transformations)
+
+                # Log any errors
+                failed_transformations = [t for t in transformation_log if not t['success']]
+                for failed in failed_transformations:
+                    error_msg = f"Field '{failed['field']}': {failed.get('error', 'Unknown error')}"
+                    self.monitor.log_error(execution_id, error_msg, "ERROR")
+
+                # Calculate data quality score
+                quality_score = self.monitor.calculate_data_quality_score(execution_id, cleaned_df)
+
+                # Finish monitoring
+                final_metrics = self.monitor.finish_pipeline_monitoring(execution_id)
+
+            return cleaned_df
+
+        except Exception as e:
+            # Log error to monitoring if enabled
+            if self.enable_monitoring and execution_id:
+                self.monitor.log_error(execution_id, f"Pipeline failure: {str(e)}", "ERROR")
+                self.monitor.finish_pipeline_monitoring(execution_id)
+
+            # Re-raise the exception
+            raise e
 
     def _apply_field_transformation(self, df: pd.DataFrame, field: str,
                                    details: Dict, dataset_name: str) -> Dict[str, Any]:

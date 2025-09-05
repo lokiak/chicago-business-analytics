@@ -1,0 +1,22 @@
+{
+  "timestamp": "2025-09-05T09:25:55.309585",
+  "dataset_name": "cta_boardings",
+  "execution_id": "cta_boardings_20250905_092555_309556",
+  "start_time": 1757085955.309588,
+  "end_time": 1757085955.311925,
+  "duration_seconds": 0.0023369789123535156,
+  "input_rows": 668,
+  "output_rows": 668,
+  "input_columns": 2,
+  "output_columns": 2,
+  "transformations_attempted": 2,
+  "transformations_successful": 2,
+  "transformation_success_rate": 100.0,
+  "expectations_evaluated": 0,
+  "expectations_passed": 0,
+  "expectations_failed": 0,
+  "validation_success_rate": 0.0,
+  "errors": [],
+  "warnings": [],
+  "status": "SUCCESS"
+}

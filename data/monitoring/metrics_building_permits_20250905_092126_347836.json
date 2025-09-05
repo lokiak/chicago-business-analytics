@@ -1,0 +1,22 @@
+{
+  "timestamp": "2025-09-05T09:21:26.347888",
+  "dataset_name": "building_permits",
+  "execution_id": "building_permits_20250905_092126_347836",
+  "start_time": 1757085686.347892,
+  "end_time": 1757085686.643868,
+  "duration_seconds": 0.295975923538208,
+  "input_rows": 8647,
+  "output_rows": 8647,
+  "input_columns": 31,
+  "output_columns": 31,
+  "transformations_attempted": 28,
+  "transformations_successful": 28,
+  "transformation_success_rate": 100.0,
+  "expectations_evaluated": 0,
+  "expectations_passed": 0,
+  "expectations_failed": 0,
+  "validation_success_rate": 0.0,
+  "errors": [],
+  "warnings": [],
+  "status": "SUCCESS"
+}

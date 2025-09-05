@@ -1,0 +1,22 @@
+{
+  "timestamp": "2025-09-05T09:09:01.535413",
+  "dataset_name": "business_licenses",
+  "execution_id": "business_licenses_20250905_090901_535390",
+  "start_time": 1757084941.535415,
+  "end_time": 1757084941.568189,
+  "duration_seconds": 0.03277397155761719,
+  "input_rows": 5,
+  "output_rows": 5,
+  "input_columns": 39,
+  "output_columns": 39,
+  "transformations_attempted": 39,
+  "transformations_successful": 39,
+  "transformation_success_rate": 100.0,
+  "expectations_evaluated": 0,
+  "expectations_passed": 0,
+  "expectations_failed": 0,
+  "validation_success_rate": 0.0,
+  "errors": [],
+  "warnings": [],
+  "status": "SUCCESS"
+}

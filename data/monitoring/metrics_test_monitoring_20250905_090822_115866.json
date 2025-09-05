@@ -1,0 +1,22 @@
+{
+  "timestamp": "2025-09-05T09:08:22.115892",
+  "dataset_name": "test_monitoring",
+  "execution_id": "test_monitoring_20250905_090822_115866",
+  "start_time": 1757084902.115895,
+  "end_time": 1757084902.11658,
+  "duration_seconds": 0.0006849765777587891,
+  "input_rows": 3,
+  "output_rows": 3,
+  "input_columns": 4,
+  "output_columns": 4,
+  "transformations_attempted": 0,
+  "transformations_successful": 0,
+  "transformation_success_rate": 0.0,
+  "expectations_evaluated": 0,
+  "expectations_passed": 0,
+  "expectations_failed": 0,
+  "validation_success_rate": 0.0,
+  "errors": [],
+  "warnings": [],
+  "status": "SUCCESS"
+}

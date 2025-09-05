@@ -6,9 +6,10 @@ Step-by-step guides for specific tasks and advanced techniques in the Chicago SM
 
 ### Data Processing & Cleaning
 - **[Great Expectations Integration](great-expectations.md)** - Advanced automated data cleaning framework
-- **[GX Step-by-Step Integration Guide](gx-integration-guide.md)** - Complete implementation walkthrough  
+- **[GX Step-by-Step Integration Guide](gx-integration-guide.md)** - Complete implementation walkthrough
+- **[GX Monitoring & Alerting Guide](gx-monitoring-guide.md)** - Production monitoring, alerting, and data quality tracking
+- **[GX Rollback & Emergency Procedures](gx-rollback-guide.md)** - Emergency fallback procedures and business continuity protocols
 - **[Manual Data Cleaning](data-cleaning.md)** - Traditional cleaning approaches
-- **[Data Quality Monitoring](quality-monitoring.md)** - Setting up continuous quality checks
 
 ### Geographic Analysis
 - **[Geographic Data Guide](geographic-data.md)** - Working with Chicago community areas, wards, and coordinates

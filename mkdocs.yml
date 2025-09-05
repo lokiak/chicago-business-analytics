@@ -1,0 +1,178 @@
+site_name: Chicago SMB Market Radar
+site_description: Business intelligence platform providing real-time visibility into Chicago's small business activity
+site_author: Chicago SMB Market Radar Team
+site_url: https://your-site-url.com
+
+# Repository
+repo_name: chicago-smb-market-radar
+repo_url: https://github.com/your-username/chicago-smb-market-radar
+edit_uri: edit/main/docs/
+
+# Configuration
+theme:
+  name: material
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      primary: blue
+      accent: orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - scheme: slate
+      primary: blue
+      accent: orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - announce.dismiss
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+    - content.tabs.link
+    - content.tooltips
+    - header.autohide
+    - navigation.expand
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.path
+    - navigation.prune
+    - navigation.sections
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+    - toc.integrate
+
+# Customization
+extra:
+  homepage: https://your-site-url.com
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/your-username/chicago-smb-market-radar
+      name: GitHub Repository
+    - icon: fontawesome/solid/chart-line
+      link: https://your-sheets-url.com
+      name: Live Data Dashboard
+  version:
+    provider: mike
+    default: stable
+
+extra_css:
+  - assets/extra.css
+
+extra_javascript:
+  - assets/extra.js
+
+# Extensions
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      normalize_issue_symbols: true
+      repo_url_shorthand: true
+      user: your-username
+      repo: chicago-smb-market-radar
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Plugins
+plugins:
+  - search:
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+
+# Navigation
+nav:
+  - Home: 'index.md'
+  
+  - Getting Started:
+    - Overview: 'getting-started/README.md'
+    - Installation & Setup: 'getting-started/installation.md'
+    - First Analysis: 'getting-started/first-run.md'
+  
+  - BI Framework:
+    - Overview: 'framework/README.md'
+    - Strategic Plan: 'BI_FRAMEWORK_STRATEGIC_PLAN.md'
+    - Implementation Success: 'GX_IMPLEMENTATION_SUCCESS.md'
+  
+  - How-to Guides:
+    - Overview: 'guides/README.md'
+    - Great Expectations:
+      - Integration Guide: 'guides/gx-integration-guide.md'
+      - Quick Start: 'guides/great-expectations.md'
+      - Checklist: 'guides/gx_integration_checklist.txt'
+    - Data Processing:
+      - Automation Setup: 'guides/automation.md'
+      - Geographic Analysis: 'guides/geographic-data.md'
+  
+  - Technical Reference:
+    - Overview: 'technical/README.md'
+    - API Reference: 'technical/api-reference.md'
+    - Schema & Validation: 'technical/schema-validation.md'
+    - Migration Guides: 'technical/migration-guides.md'
+  
+  - Reports & Analysis:
+    - Overview: 'reports/README.md'
+    - Weekly Reports: 'reports/weekly/README.md'
+    - Analysis Notebooks: 'reports/analysis/README.md'
+  
+  - Project Info:
+    - About: 'about/README.md'
+    - Changelog: 'about/changelog.md'
+    - Workflow: 'WORKFLOW.md'
+    - Special Fixes:
+      - NumPy Compatibility: 'NUMPY_PICKLE_COMPATIBILITY_FIX.md'
+      - Project Restructuring: 'RESTRUCTURING_PLAN.md'
+  
+  - Developer Logs:
+    - 2025 Overview: '2025/README.md'
+    - August 2025: '2025/08/25.md'
+
+# Watch additional files
+watch:
+  - docs/
+  - mkdocs.yml
