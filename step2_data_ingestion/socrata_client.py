@@ -2,6 +2,12 @@
 import time
 import requests
 import logging
+import sys
+from pathlib import Path
+
+# Add path for security utilities
+sys.path.append(str(Path(__file__).parent.parent / "shared"))
+from security_utils import rate_limit, InputValidator, SecurityLogger, SecurityError
 
 DEFAULT_LIMIT = 50000
 
@@ -10,7 +16,8 @@ class SocrataClient:
         self.base = f"https://{domain}/resource"
         self.logger = logging.getLogger("market_radar")
 
-    def get(self, dataset_id: str, params, limit: int = DEFAULT_LIMIT, retries: int = 3, backoff: float = 1.5):
+    @rate_limit(calls_per_second=1.0)  # Rate limit API calls
+    def get(self, dataset_id: str, params, limit: int = DEFAULT_LIMIT, retries: int = 3, backoff: float = 1.5, dataset_name: str = None):
         out, offset = [], 0
         while True:
             p = dict(params)
@@ -32,11 +39,25 @@ class SocrataClient:
                         try:
                             chunk = r.json()
                             self.logger.info(f"Successfully parsed JSON response with {len(chunk)} records")
+                            
+                            # Log API call for security monitoring
+                            SecurityLogger.log_api_call(url, r.status_code, len(r.text))
+                            
+                            # Validate the response data if dataset name is provided
+                            if dataset_name and chunk:
+                                try:
+                                    InputValidator.validate_api_response(chunk, dataset_name)
+                                except SecurityError as e:
+                                    self.logger.error(f"Security validation failed: {e}")
+                                    SecurityLogger.log_security_event("validation_failure", f"Dataset: {dataset_name}, Error: {e}", "WARNING")
+                                    # Continue processing but log the issue
+                            
                             out.extend(chunk)
                             break
                         except ValueError as e:
                             self.logger.error(f"Failed to parse JSON response: {e}")
                             self.logger.error(f"Response content (first 500 chars): {r.text[:500]}")
+                            SecurityLogger.log_api_call(url, r.status_code, 0)  # Log failed parse
                             if attempt == retries - 1:
                                 raise RuntimeError(f"Failed to parse JSON response after {retries} attempts: {e}")
                     else:

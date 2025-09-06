@@ -13,8 +13,33 @@ from config_manager import load_settings, load_datasets_yaml
 from socrata_client import SocrataClient
 from sheets_client import open_sheet, upsert_worksheet, overwrite_with_dataframe, upsert_to_worksheet, get_date_filtered_data
 from schema import SchemaManager
+from security_utils import SecurityLogger, security_health_check, InputValidator
+from secure_storage import SecureStorage
 
 logger = setup_logger()
+security_logger = SecurityLogger()
+
+def initialize_security():
+    """Initialize security features and run health checks"""
+    logger.info("=== Security Initialization ===")
+    
+    # Run security health checks
+    health_results = security_health_check()
+    failed_checks = [check for check, passed in health_results.items() if not passed]
+    
+    if failed_checks:
+        logger.warning(f"Security health check failures: {', '.join(failed_checks)}")
+    else:
+        logger.info("✅ All security health checks passed")
+    
+    # Initialize secure storage
+    try:
+        storage = SecureStorage()
+        logger.info("✅ Secure storage initialized")
+        return storage
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize secure storage: {e}")
+        return None
 
 def debug_socrata_api(client, cfg):
     """Debug function to test Socrata API directly"""
@@ -163,7 +188,7 @@ def fetch_licenses(client, cfg, days_lookback: int):
     logger.info(f"Start date: {start_date}")
     logger.info(f"Expanded fields: {len(params['$select'].split(','))} fields selected")
 
-    data = client.get(ds["id"], params)
+    data = client.get(ds["id"], params, dataset_name="business_licenses")
     logger.info(f"Retrieved {len(data)} license records with expanded fields")
 
     # Check if we got any data and log the actual fields received
@@ -189,7 +214,7 @@ def fetch_permits(client, cfg, days_lookback: int):
         "$where": f"{ds['date_field']} >= '{(datetime.utcnow() - pd.Timedelta(days=days_lookback)).strftime('%Y-%m-%d')}'",
         "$order": f"{ds['date_field']}"
     }
-    data = client.get(ds["id"], params)
+    data = client.get(ds["id"], params, dataset_name="building_permits")
     logger.info(f"Retrieved {len(data)} permit records with expanded fields")
 
     # Check if we got any data and log the actual fields received
@@ -224,7 +249,7 @@ def fetch_cta(client, cfg, days_lookback: int):
     }
 
     logger.info(f"CTA query parameters: {params}")
-    data = client.get(ds["id"], params)
+    data = client.get(ds["id"], params, dataset_name="cta_boardings")
     # No longer saving JSON files locally to save space
     df = pd.DataFrame(data)
     if df.empty:
@@ -276,6 +301,9 @@ def flatten_location_data(df):
     return df_flat
 
 def main():
+    # Initialize security features first
+    security_storage = initialize_security()
+    
     settings = load_settings()
     cfg = load_datasets_yaml()
     client = SocrataClient(cfg["domain"])
