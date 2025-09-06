@@ -32,9 +32,8 @@ class SecureStorage:
         
         if self.encryption_key:
             try:
-                # Decode the base64 key
-                key_bytes = base64.urlsafe_b64decode(self.encryption_key.encode())
-                self.cipher_suite = Fernet(base64.urlsafe_b64encode(key_bytes))
+                # The key should already be base64 encoded
+                self.cipher_suite = Fernet(self.encryption_key.encode())
                 SecurityLogger.log_security_event("encryption_initialized", "Data encryption enabled")
             except Exception as e:
                 SecurityLogger.log_security_event("encryption_init_failed", f"Failed to initialize encryption: {e}", "ERROR")
@@ -51,7 +50,7 @@ class SecureStorage:
             str: Base64 encoded encryption key
         """
         key = Fernet.generate_key()
-        return base64.urlsafe_b64encode(key).decode()
+        return key.decode()  # Fernet.generate_key() already returns base64 encoded bytes
     
     @staticmethod
     def derive_key_from_password(password: str, salt: bytes = None) -> tuple[str, bytes]:

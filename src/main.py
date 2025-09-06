@@ -172,8 +172,11 @@ def debug_cta_api(client, cfg):
 def fetch_licenses(client, cfg, days_lookback: int):
     ds = cfg["datasets"]["business_licenses"]
 
-    # Get field names from schema instead of hardcoded list
-    field_names = SchemaManager.get_field_names("business_licenses")
+    # Get field names from schema but exclude processed fields that don't exist in API
+    all_field_names = SchemaManager.get_field_names("business_licenses")
+    # Filter out fields that don't exist in the API (determined from debug analysis)
+    non_existent_fields = ['location_latitude', 'location_longitude', 'location_human_address', 'community_area', 'community_area_name']
+    field_names = [f for f in all_field_names if f not in non_existent_fields]
 
     params = {
         "$select": ",".join(field_names),
