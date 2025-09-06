@@ -144,6 +144,29 @@ ENV/
 env.bak/
 venv.bak/
 
+# Security - Credential and Key Files
+*.json
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*
+*secret*
+*private*
+service-account*.json
+sa.json
+
+# Security - Local Configuration
+.env.*
+!.env.example
+local_config.*
+
+# Security - Generated Keys and Certificates
+*.crt
+*.csr
+security.log
+audit.log
+
 # Spyder project settings
 .spyderproject
 .spyproject
