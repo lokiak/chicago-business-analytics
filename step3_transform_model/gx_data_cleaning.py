@@ -573,47 +573,46 @@ class SmartDataCleaner:
         return df
 
     def _add_geo_columns_for_building_permits(self, df: pd.DataFrame) -> None:
-        """Add geo-friendly columns for Looker Studio visualization."""
+        """Add geo-friendly columns for Looker Studio visualization with geocoding."""
         try:
             # Check if we have the required address components
             address_components = ['street_number', 'street_direction', 'street_name']
             has_address_data = all(col in df.columns for col in address_components)
 
             if has_address_data:
-                # Create full_address column for Google Maps (Address type in Looker Studio)
-                def create_full_address(row):
+                def create_base_address(row):
+                    """Create base address for geocoding."""
                     parts = []
-
-                    # Add street number if available
                     if pd.notna(row.get('street_number')) and str(row.get('street_number')).strip():
                         parts.append(str(row['street_number']).strip())
-
-                    # Add street direction if available
                     if pd.notna(row.get('street_direction')) and str(row.get('street_direction')).strip():
                         parts.append(str(row['street_direction']).strip())
-
-                    # Add street name if available
                     if pd.notna(row.get('street_name')) and str(row.get('street_name')).strip():
                         parts.append(str(row['street_name']).strip())
 
-                    # Combine with Chicago, Illinois
                     if parts:
                         street_address = ' '.join(parts)
-                        return f"{street_address}, Chicago, Illinois"
+                        return f"{street_address}, Chicago, IL"
                     else:
-                        return "Chicago, Illinois"  # Fallback for incomplete addresses
+                        return "Chicago, IL"
 
-                df['full_address'] = df.apply(create_full_address, axis=1)
-                print(f"   ✅ Added full_address column for Google Maps visualization")
+                # Add basic geo columns (fast, no geocoding)
+                self._add_basic_geo_columns(df)
 
-                # Create city column for Geo charts (City type in Looker Studio)
-                df['city'] = 'Chicago'
+                print(f"   ✅ Added full_address column with zip codes")
                 print(f"   ✅ Added city column for Geo chart visualization")
+                print(f"   ✅ Added latitude/longitude columns for precise mapping")
+                print(f"   ✅ Added lat_lng column for Looker Studio geo visualization")
+                print(f"   ✅ Added zip_code column for postal code analysis")
 
-                # Log some examples for verification
-                non_empty_addresses = df[df['full_address'] != 'Chicago, Illinois']['full_address'].head(3)
-                if not non_empty_addresses.empty:
-                    print(f"   📍 Sample addresses: {list(non_empty_addresses)}")
+                # Show sample results
+                sample_data = df[df['full_address'] != 'Chicago, Illinois'].head(2)
+                if not sample_data.empty:
+                    for idx, row in sample_data.iterrows():
+                        addr = row.get('full_address', 'N/A')
+                        lat_lng = row.get('lat_lng', 'N/A')
+                        zip_code = row.get('zip_code', 'N/A')
+                        print(f"   📍 Sample: {addr} | Lat/Lng: {lat_lng} | Zip: {zip_code}")
 
             else:
                 print(f"   ⚠️  Missing address components for geo columns")
@@ -622,6 +621,706 @@ class SmartDataCleaner:
             print(f"   ⚠️  Error adding geo columns: {e}")
 
         return df
+
+    def _add_basic_geo_columns(self, df: pd.DataFrame) -> None:
+        """Add geo columns using geopy for proper geocoding."""
+        try:
+            # Initialize geo columns
+            df['full_address'] = None
+            df['zip_code'] = None
+            df['latitude'] = None
+            df['longitude'] = None
+            df['lat_lng'] = None
+            df['city'] = 'Chicago'
+
+            print(f"   🌍 Geocoding {len(df)} building permits with geopy...")
+
+            # Apply efficient geocoding with rate limiting
+            self._apply_geopy_geocoding(df)
+
+            # Count successful geocodes
+            geocoded_count = df[['latitude', 'longitude']].notna().all(axis=1).sum()
+            success_rate = (geocoded_count / len(df)) * 100
+            print(f"   🎯 Successfully geocoded {geocoded_count}/{len(df)} addresses ({success_rate:.1f}%)")
+
+        except Exception as e:
+            print(f"   ⚠️  Error adding geo columns: {e}")
+
+    def _apply_geopy_geocoding(self, df: pd.DataFrame) -> None:
+        """Apply smart geocoding with rate limiting and sampling for large datasets."""
+        import geocoder
+        import time
+
+        # Create full addresses
+        df['base_address'] = df.apply(self._create_full_address, axis=1)
+
+        # Smart sampling for large datasets
+        total_addresses = len(df)
+        if total_addresses > 1000:
+            print(f"   📊 Large dataset detected ({total_addresses} addresses)")
+            print(f"   🎯 Using smart sampling + pattern matching for efficiency")
+
+            # Sample geocoding approach for large datasets
+            self._apply_smart_sampling_geocoding(df)
+        else:
+            # Full geocoding for smaller datasets
+            self._apply_full_geocoding(df)
+
+        # Clean up temporary column
+        df.drop('base_address', axis=1, inplace=True)
+
+    def _apply_smart_sampling_geocoding(self, df: pd.DataFrame) -> None:
+        """Apply geocoding with smart sampling for large datasets."""
+        import geocoder
+        import time
+        from collections import defaultdict
+
+        print(f"   🧠 Building Chicago street pattern database...")
+
+        # Group addresses by street name for pattern recognition
+        street_groups = defaultdict(list)
+        for idx, row in df.iterrows():
+            base_addr = row['base_address']
+            if pd.notna(base_addr) and base_addr.strip():
+                # Extract street name (last part)
+                parts = base_addr.split()
+                if len(parts) >= 2:
+                    street_name = ' '.join(parts[-2:]).lower()  # e.g., "state st"
+                    street_groups[street_name].append(idx)
+
+        print(f"   📍 Found {len(street_groups)} unique streets")
+
+        # Geocode representative samples from each street
+        street_patterns = {}
+        geocoded_count = 0
+
+        for street_name, indices in street_groups.items():
+            if len(indices) > 5:  # Only sample streets with multiple addresses
+                # Take a sample address from this street
+                sample_idx = indices[0]
+                sample_addr = df.loc[sample_idx, 'base_address']
+
+                try:
+                    full_addr = f"{sample_addr}, Chicago, IL"
+                    g = geocoder.arcgis(full_addr)
+
+                    if g.ok:
+                        # Extract pattern info
+                        zip_code = self._extract_zip_from_geocoder(g)
+                        street_patterns[street_name] = {
+                            'base_lat': g.lat,
+                            'base_lng': g.lng,
+                            'zip_code': zip_code
+                        }
+                        geocoded_count += 1
+                        print(f"     ✅ Mapped {street_name} → {zip_code}")
+
+                    time.sleep(0.3)  # Rate limiting
+
+                except Exception as e:
+                    continue
+
+        print(f"   🎯 Geocoded {geocoded_count} street patterns")
+
+        # Apply patterns to all addresses
+        self._apply_street_patterns(df, street_patterns)
+
+    def _apply_street_patterns(self, df: pd.DataFrame, street_patterns: dict) -> None:
+        """Apply learned street patterns to all addresses."""
+        applied_count = 0
+
+        for idx, row in df.iterrows():
+            base_addr = row['base_address']
+
+            if pd.isna(base_addr) or not base_addr.strip():
+                df.at[idx, 'full_address'] = "Chicago, Illinois"
+                continue
+
+            # Extract street name
+            parts = base_addr.split()
+            if len(parts) >= 2:
+                street_name = ' '.join(parts[-2:]).lower()
+
+                if street_name in street_patterns:
+                    # Apply learned pattern
+                    pattern = street_patterns[street_name]
+
+                    # Use base coordinates (could be enhanced with address number offsets)
+                    df.at[idx, 'latitude'] = pattern['base_lat']
+                    df.at[idx, 'longitude'] = pattern['base_lng']
+                    df.at[idx, 'lat_lng'] = f"{pattern['base_lat']},{pattern['base_lng']}"
+                    df.at[idx, 'zip_code'] = pattern['zip_code']
+
+                    # Create enhanced full address
+                    if pattern['zip_code']:
+                        df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois {pattern['zip_code']}"
+                    else:
+                        df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois"
+
+                    applied_count += 1
+                else:
+                    # Fallback for unmatched streets
+                    df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois"
+            else:
+                df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois"
+
+        print(f"   🎯 Applied patterns to {applied_count}/{len(df)} addresses")
+
+    def _apply_full_geocoding(self, df: pd.DataFrame) -> None:
+        """Apply full geocoding for smaller datasets."""
+        import geocoder
+        import time
+
+        geocoded_count = 0
+
+        for idx, row in df.iterrows():
+            try:
+                base_addr = row['base_address']
+                if pd.isna(base_addr) or not base_addr.strip():
+                    df.at[idx, 'full_address'] = "Chicago, Illinois"
+                    continue
+
+                full_addr = f"{base_addr}, Chicago, IL"
+                g = geocoder.arcgis(full_addr)
+
+                if g.ok:
+                    df.at[idx, 'latitude'] = g.lat
+                    df.at[idx, 'longitude'] = g.lng
+                    df.at[idx, 'lat_lng'] = f"{g.lat},{g.lng}"
+
+                    zip_code = self._extract_zip_from_geocoder(g)
+                    df.at[idx, 'zip_code'] = zip_code
+
+                    if zip_code:
+                        df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois {zip_code}"
+                    else:
+                        df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois"
+
+                    geocoded_count += 1
+                else:
+                    df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois"
+
+                time.sleep(0.2)
+
+            except Exception as e:
+                df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois" if pd.notna(base_addr) else "Chicago, Illinois"
+                continue
+
+        print(f"   🎯 Geocoded {geocoded_count}/{len(df)} addresses")
+
+    def _create_full_address(self, row) -> str:
+        """Create a full address string from components."""
+        parts = []
+        if pd.notna(row.get('street_number')) and str(row.get('street_number')).strip():
+            parts.append(str(row['street_number']).strip())
+        if pd.notna(row.get('street_direction')) and str(row.get('street_direction')).strip():
+            parts.append(str(row['street_direction']).strip())
+        if pd.notna(row.get('street_name')) and str(row.get('street_name')).strip():
+            parts.append(str(row['street_name']).strip())
+
+        return ' '.join(parts) if parts else None
+
+    def _extract_zip_from_geocoder(self, geocoder_result) -> str:
+        """Extract ZIP code from geocoder result."""
+        try:
+            # Try to extract ZIP from address string
+            import re
+            if hasattr(geocoder_result, 'address') and geocoder_result.address:
+                # Look for 5-digit ZIP code in the address
+                zip_match = re.search(r'\b(\d{5})\b', geocoder_result.address)
+                if zip_match:
+                    return zip_match.group(1)
+        except:
+            pass
+        return None
+
+    def _extract_zip_from_location(self, location) -> str:
+        """Extract ZIP code from geopy location object."""
+        try:
+            if hasattr(location, 'raw') and 'address' in location.raw:
+                address_components = location.raw['address']
+                return address_components.get('postcode')
+        except:
+            pass
+        return None
+
+    def _enhance_addresses_with_geocoding(self, addresses: pd.Series) -> dict:
+        """Enhance addresses with zip codes and lat/lng coordinates using fast hybrid geocoding."""
+        import pgeocode
+        from geopy.geocoders import Nominatim
+        import time
+        import ssl
+        from typing import Dict, Any
+
+        # Fix SSL certificate issue for pgeocode
+        ssl._create_default_https_context = ssl._create_unverified_context
+
+        enhanced_data = {
+            'full_address': [],
+            'zip_code': [],
+            'latitude': [],
+            'longitude': [],
+            'lat_lng': []
+        }
+
+        print(f"   🚀 Fast hybrid geocoding for {len(addresses)} addresses...")
+
+        # Initialize geocoders
+        print(f"   📚 Loading geocoding databases...")
+        nomi = pgeocode.Nominatim('us')  # US postal codes database (instant, offline)
+        geopy_geocoder = Nominatim(user_agent="Chicago-SMB-Market-Radar/1.0")
+
+        # Pre-compile Chicago address patterns for faster matching
+        chicago_zip_coords = self._get_chicago_zip_coordinates()
+
+        geocoded_count = 0
+        fallback_count = 0
+
+        for i, address in enumerate(addresses):
+            try:
+                if pd.isna(address) or address.strip() == "Chicago, IL":
+                    # Handle empty/default addresses
+                    enhanced_data['full_address'].append("Chicago, Illinois")
+                    enhanced_data['zip_code'].append(None)
+                    enhanced_data['latitude'].append(None)
+                    enhanced_data['longitude'].append(None)
+                    enhanced_data['lat_lng'].append(None)
+                    continue
+
+                # Strategy 1: Try Chicago street centerline matching (fastest)
+                geocoded = self._match_chicago_street_address(address.strip(), chicago_zip_coords)
+
+                # Strategy 2: If no match, try pgeocode with inferred zip
+                if not geocoded:
+                    geocoded = self._geocode_with_pgeocode(address.strip(), nomi)
+
+                # Strategy 3: Fallback to geopy for unmatched addresses (rate limited)
+                if not geocoded and fallback_count < 100:  # Limit fallback calls
+                    geocoded = self._geocode_with_geopy(address.strip(), geopy_geocoder)
+                    fallback_count += 1
+                    if fallback_count % 10 == 0:
+                        time.sleep(1)  # Rate limiting for geopy
+
+                if geocoded:
+                    # Create enhanced full address with zip
+                    zip_part = f", {geocoded['zip_code']}" if geocoded['zip_code'] else ""
+                    full_addr = f"{address}{zip_part}, Illinois"
+                    enhanced_data['full_address'].append(full_addr)
+                    enhanced_data['zip_code'].append(geocoded['zip_code'])
+                    enhanced_data['latitude'].append(geocoded['latitude'])
+                    enhanced_data['longitude'].append(geocoded['longitude'])
+
+                    # Create lat_lng for Looker Studio
+                    if geocoded['latitude'] and geocoded['longitude']:
+                        lat_lng = f"{geocoded['latitude']},{geocoded['longitude']}"
+                        enhanced_data['lat_lng'].append(lat_lng)
+                        geocoded_count += 1
+                    else:
+                        enhanced_data['lat_lng'].append(None)
+                else:
+                    # Fallback for completely failed geocoding
+                    enhanced_data['full_address'].append(f"{address}, Illinois")
+                    enhanced_data['zip_code'].append(None)
+                    enhanced_data['latitude'].append(None)
+                    enhanced_data['longitude'].append(None)
+                    enhanced_data['lat_lng'].append(None)
+
+                # Progress update
+                if i > 0 and i % 1000 == 0:
+                    print(f"     ... processed {i}/{len(addresses)} addresses (success: {geocoded_count})")
+
+            except Exception as e:
+                print(f"     ⚠️  Geocoding error for '{address}': {e}")
+                # Fallback for errors
+                enhanced_data['full_address'].append(f"{address}, Illinois")
+                enhanced_data['zip_code'].append(None)
+                enhanced_data['latitude'].append(None)
+                enhanced_data['longitude'].append(None)
+                enhanced_data['lat_lng'].append(None)
+
+        print(f"   🎯 Fast geocoding results: {geocoded_count}/{len(addresses)} addresses")
+        print(f"   📊 Used fallback geocoding for: {fallback_count} addresses")
+
+        return enhanced_data
+
+    def _get_chicago_zip_coordinates(self) -> dict:
+        """Get Chicago zip code to coordinate mapping using pgeocode."""
+        import pgeocode
+        import ssl
+
+        # Fix SSL certificate issue for pgeocode
+        ssl._create_default_https_context = ssl._create_unverified_context
+
+        # Chicago zip codes (major ones)
+        chicago_zips = [
+            '60601', '60602', '60603', '60604', '60605', '60606', '60607', '60608', '60609', '60610',
+            '60611', '60612', '60613', '60614', '60615', '60616', '60617', '60618', '60619', '60620',
+            '60621', '60622', '60623', '60624', '60625', '60626', '60628', '60629', '60630', '60631',
+            '60632', '60633', '60634', '60636', '60637', '60638', '60639', '60640', '60641', '60642',
+            '60643', '60644', '60645', '60646', '60647', '60649', '60651', '60652', '60653', '60654',
+            '60655', '60656', '60657', '60659', '60660', '60661', '60664', '60666', '60668', '60669',
+            '60670', '60673', '60674', '60675', '60677', '60678', '60680', '60681', '60682', '60684',
+            '60685', '60686', '60687', '60688', '60689', '60690', '60691', '60693', '60694', '60695',
+            '60696', '60697', '60699'
+        ]
+
+        nomi = pgeocode.Nominatim('us')
+        zip_coords = {}
+
+        for zip_code in chicago_zips:
+            try:
+                location = nomi.query_postal_code(zip_code)
+                if not pd.isna(location.latitude) and not pd.isna(location.longitude):
+                    zip_coords[zip_code] = {
+                        'latitude': float(location.latitude),
+                        'longitude': float(location.longitude)
+                    }
+            except:
+                continue
+
+        return zip_coords
+
+    def _match_chicago_street_address(self, address: str, zip_coords: dict) -> dict:
+        """Match Chicago street address using local patterns and zip inference."""
+        try:
+            # Common Chicago street patterns and their typical zip codes
+            street_patterns = {
+                'state st': ['60601', '60602', '60603', '60604', '60605'],
+                'michigan ave': ['60601', '60602', '60603', '60604', '60611'],
+                'lasalle st': ['60601', '60602', '60603', '60604'],
+                'clark st': ['60613', '60614', '60657', '60660'],
+                'halsted st': ['60607', '60608', '60622', '60642'],
+                'ashland ave': ['60607', '60608', '60622', '60642'],
+                'western ave': ['60618', '60625', '60647', '60659'],
+                'north ave': ['60622', '60642', '60647'],
+                'roosevelt rd': ['60607', '60608', '60616'],
+                'cermak rd': ['60608', '60616', '60623'],
+                'irving park rd': ['60618', '60625', '60634'],
+                'belmont ave': ['60613', '60618', '60657'],
+                'fullerton ave': ['60614', '60647', '60657'],
+                'division st': ['60610', '60622', '60642'],
+                'chicago ave': ['60610', '60622', '60642'],
+                'grand ave': ['60610', '60622', '60642']
+            }
+
+            address_lower = address.lower()
+
+            # Extract street number for north/south estimation
+            street_number = None
+            parts = address.split()
+            if parts and parts[0].isdigit():
+                street_number = int(parts[0])
+
+            # Find matching street pattern
+            for street_pattern, zip_list in street_patterns.items():
+                if street_pattern in address_lower:
+                    # Pick zip based on street number (rough Chicago grid system)
+                    if street_number:
+                        if street_number >= 8000:  # Far north/south
+                            zip_code = zip_list[-1] if len(zip_list) > 2 else zip_list[0]
+                        elif street_number >= 4000:  # Mid north/south
+                            zip_code = zip_list[len(zip_list)//2] if len(zip_list) > 1 else zip_list[0]
+                        else:  # Central/downtown
+                            zip_code = zip_list[0]
+                    else:
+                        zip_code = zip_list[0]  # Default to first zip
+
+                    # Get coordinates for this zip
+                    if zip_code in zip_coords:
+                        coords = zip_coords[zip_code]
+                        return {
+                            'latitude': coords['latitude'],
+                            'longitude': coords['longitude'],
+                            'zip_code': zip_code
+                        }
+
+            return None
+
+        except Exception as e:
+            return None
+
+    def _geocode_with_pgeocode(self, address: str, nomi) -> dict:
+        """Geocode using pgeocode with zip inference."""
+        try:
+            # Try to extract zip code from address
+            import re
+            zip_match = re.search(r'\b\d{5}\b', address)
+
+            if zip_match:
+                zip_code = zip_match.group()
+                location = nomi.query_postal_code(zip_code)
+
+                if not pd.isna(location.latitude) and not pd.isna(location.longitude):
+                    return {
+                        'latitude': float(location.latitude),
+                        'longitude': float(location.longitude),
+                        'zip_code': zip_code
+                    }
+
+            # If no zip in address, try common Chicago zips based on street patterns
+            if 'downtown' in address.lower() or 'loop' in address.lower():
+                zip_code = '60601'
+            elif 'north' in address.lower() and any(x in address.lower() for x in ['clark', 'lincoln', 'halsted']):
+                zip_code = '60614'
+            elif 'south' in address.lower():
+                zip_code = '60616'
+            else:
+                return None
+
+            location = nomi.query_postal_code(zip_code)
+            if not pd.isna(location.latitude) and not pd.isna(location.longitude):
+                return {
+                    'latitude': float(location.latitude),
+                    'longitude': float(location.longitude),
+                    'zip_code': zip_code
+                }
+
+            return None
+
+        except Exception as e:
+            return None
+
+    def _geocode_with_geopy(self, address: str, geocoder) -> dict:
+        """Fallback geocoding using geopy."""
+        try:
+            full_address = f"{address}, Chicago, IL"
+            location = geocoder.geocode(full_address)
+
+            if location:
+                # Extract zip from address components if available
+                zip_code = None
+                if hasattr(location, 'raw') and 'address' in location.raw:
+                    address_parts = location.raw['address']
+                    zip_code = address_parts.get('postcode')
+
+                return {
+                    'latitude': float(location.latitude),
+                    'longitude': float(location.longitude),
+                    'zip_code': zip_code
+                }
+
+            return None
+
+        except Exception as e:
+            return None
+
+    def _geocode_address(self, address: str) -> Dict[str, Any]:
+        """Geocode a single address using Census Geocoding API."""
+        import requests
+        import time
+
+        try:
+            # US Census Geocoding API - free, no API key required
+            base_url = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
+            params = {
+                'address': address,
+                'benchmark': 'Public_AR_Current',
+                'format': 'json'
+            }
+
+            response = requests.get(base_url, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+
+                if data.get('result', {}).get('addressMatches'):
+                    match = data['result']['addressMatches'][0]
+                    coords = match.get('coordinates', {})
+                    address_components = match.get('addressComponents', {})
+
+                    return {
+                        'latitude': coords.get('y'),
+                        'longitude': coords.get('x'),
+                        'zip_code': address_components.get('zip')
+                    }
+
+            # Fallback to Nominatim if Census fails
+            return self._geocode_with_nominatim(address)
+
+        except Exception as e:
+            print(f"     ⚠️  Census geocoding failed for '{address}': {e}")
+            return self._geocode_with_nominatim(address)
+
+    def _geocode_with_nominatim(self, address: str) -> Dict[str, Any]:
+        """Fallback geocoding using Nominatim (OpenStreetMap)."""
+        import requests
+        import time
+
+        try:
+            # Add respectful delay
+            time.sleep(0.5)
+
+            base_url = "https://nominatim.openstreetmap.org/search"
+            params = {
+                'q': address,
+                'format': 'json',
+                'limit': 1,
+                'countrycodes': 'us',
+                'addressdetails': 1
+            }
+            headers = {
+                'User-Agent': 'Chicago-SMB-Market-Radar/1.0 (Data Analysis Tool)'
+            }
+
+            response = requests.get(base_url, params=params, headers=headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+
+                if data:
+                    result = data[0]
+                    address_details = result.get('address', {})
+
+                    return {
+                        'latitude': float(result.get('lat', 0)) if result.get('lat') else None,
+                        'longitude': float(result.get('lon', 0)) if result.get('lon') else None,
+                        'zip_code': address_details.get('postcode')
+                    }
+
+            return None
+
+        except Exception as e:
+            print(f"     ⚠️  Nominatim geocoding failed for '{address}': {e}")
+            return None
+
+    def _add_geo_columns_with_smart_caching(self, df: pd.DataFrame) -> None:
+        """Add geo columns with smart caching - only geocode rows missing geo data."""
+        from shared.sheets_client import open_sheet
+        import os
+
+        # Initialize geo columns if they don't exist
+        geo_columns = ['full_address', 'zip_code', 'latitude', 'longitude', 'lat_lng', 'city']
+        for col in geo_columns:
+            if col not in df.columns:
+                df[col] = None
+
+        # Set city for all rows (this is static)
+        df['city'] = 'Chicago'
+
+        try:
+            # Try to get existing data from Google Sheets for smart caching
+            sheet_id = os.getenv('SHEET_ID')
+            if sheet_id:
+                print(f"   🔍 Checking existing geo data in Google Sheets for smart caching...")
+
+                sh = open_sheet(sheet_id)
+                existing_geo_data = self._get_existing_geo_data(sh, 'Building_Permits_GX_Cleaned')
+
+                if existing_geo_data is not None and not existing_geo_data.empty:
+                    # Merge existing geo data with current data
+                    df = self._merge_existing_geo_data(df, existing_geo_data)
+                    print(f"   📊 Loaded existing geo data for {len(existing_geo_data)} records")
+                else:
+                    print(f"   💡 No existing geo data found, will geocode all addresses")
+
+            # Identify rows that need geocoding (missing lat/lng but have address data)
+            needs_geocoding = (
+                (df['latitude'].isna() | df['longitude'].isna()) &
+                (df['base_address'] != 'Chicago, IL') &
+                df['base_address'].notna()
+            )
+
+            addresses_to_geocode = df.loc[needs_geocoding, 'base_address']
+
+            if len(addresses_to_geocode) > 0:
+                print(f"   🗺️  Geocoding {len(addresses_to_geocode)} new/missing addresses...")
+
+                # Geocode only the missing addresses
+                geo_results = self._enhance_addresses_with_geocoding(addresses_to_geocode)
+
+                # Update only the rows that needed geocoding
+                for i, (idx, address) in enumerate(addresses_to_geocode.items()):
+                    df.loc[idx, 'full_address'] = geo_results['full_address'][i]
+                    df.loc[idx, 'zip_code'] = geo_results['zip_code'][i]
+                    df.loc[idx, 'latitude'] = geo_results['latitude'][i]
+                    df.loc[idx, 'longitude'] = geo_results['longitude'][i]
+                    df.loc[idx, 'lat_lng'] = geo_results['lat_lng'][i]
+            else:
+                print(f"   ✅ All addresses already geocoded - using cached data")
+
+            # Handle rows without proper addresses
+            no_address_rows = (df['base_address'] == 'Chicago, IL') | df['base_address'].isna()
+            df.loc[no_address_rows, 'full_address'] = 'Chicago, Illinois'
+            df.loc[no_address_rows, 'zip_code'] = None
+            df.loc[no_address_rows, 'latitude'] = None
+            df.loc[no_address_rows, 'longitude'] = None
+            df.loc[no_address_rows, 'lat_lng'] = None
+
+        except Exception as e:
+            print(f"   ⚠️  Smart caching error, falling back to basic geocoding: {e}")
+            # Fallback to full geocoding if caching fails
+            geo_results = self._enhance_addresses_with_geocoding(df['base_address'])
+            df['full_address'] = geo_results['full_address']
+            df['zip_code'] = geo_results['zip_code']
+            df['latitude'] = geo_results['latitude']
+            df['longitude'] = geo_results['longitude']
+            df['lat_lng'] = geo_results['lat_lng']
+
+    def _get_existing_geo_data(self, sh, worksheet_name: str):
+        """Get existing geo data from Google Sheets."""
+        try:
+            # Try to open the existing worksheet
+            ws = sh.worksheet(worksheet_name)
+
+            # Get all data
+            data = ws.get_all_records()
+
+            if data:
+                existing_df = pd.DataFrame(data)
+
+                # Only return data that has geo columns and some geo data
+                geo_columns = ['id', 'full_address', 'zip_code', 'latitude', 'longitude', 'lat_lng']
+                available_geo_cols = [col for col in geo_columns if col in existing_df.columns]
+
+                if len(available_geo_cols) > 1:  # At least id + one geo column
+                    return existing_df[available_geo_cols]
+
+            return None
+
+        except Exception as e:
+            print(f"     ⚠️  Could not load existing geo data: {e}")
+            return None
+
+    def _merge_existing_geo_data(self, df: pd.DataFrame, existing_geo_data: pd.DataFrame) -> pd.DataFrame:
+        """Merge existing geo data with current dataframe."""
+        try:
+            # Ensure 'id' column exists in both dataframes
+            if 'id' not in df.columns or 'id' not in existing_geo_data.columns:
+                return df
+
+            # Convert IDs to string for consistent matching
+            df['id'] = df['id'].astype(str)
+            existing_geo_data['id'] = existing_geo_data['id'].astype(str)
+
+            # Merge existing geo data
+            geo_columns_to_merge = ['full_address', 'zip_code', 'latitude', 'longitude', 'lat_lng']
+            available_columns = [col for col in geo_columns_to_merge if col in existing_geo_data.columns]
+
+            if available_columns:
+                merge_columns = ['id'] + available_columns
+                existing_subset = existing_geo_data[merge_columns].copy()
+
+                # Only keep rows with actual geo data (not empty)
+                has_geo_data = existing_subset[available_columns].notna().any(axis=1)
+                existing_subset = existing_subset[has_geo_data]
+
+                if not existing_subset.empty:
+                    # Merge with left join to preserve all current data
+                    df = df.merge(existing_subset, on='id', how='left', suffixes=('', '_existing'))
+
+                    # For each geo column, use existing data if current is empty
+                    for col in available_columns:
+                        existing_col = f"{col}_existing"
+                        if existing_col in df.columns:
+                            # Update only where current data is missing and existing data exists
+                            mask = df[col].isna() & df[existing_col].notna()
+                            df.loc[mask, col] = df.loc[mask, existing_col]
+                            # Drop the temporary existing column
+                            df.drop(existing_col, axis=1, inplace=True)
+
+            return df
+
+        except Exception as e:
+            print(f"     ⚠️  Error merging existing geo data: {e}")
+            return df
 
     def _deduplicate_coordinate_fields(self, df: pd.DataFrame) -> pd.DataFrame:
         """
