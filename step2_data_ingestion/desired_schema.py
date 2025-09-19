@@ -202,9 +202,7 @@ class ChicagoDesiredSchemas:
             DesiredFieldDefinition("longitude", DesiredDataType.FLOAT, "Longitude coordinate (Chicago bounds)", False,
                                  validation_rules={"min_value": -87.9, "max_value": -87.5}, analysis_priority="high"),
 
-            # Processed location data (from flattened 'location' field)
-            DesiredFieldDefinition("location_latitude", DesiredDataType.FLOAT, "Latitude from processed location", False, analysis_priority="medium"),
-            DesiredFieldDefinition("location_longitude", DesiredDataType.FLOAT, "Longitude from processed location", False, analysis_priority="medium"),
+            # Additional location data
             DesiredFieldDefinition("location_human_address", DesiredDataType.STRING, "Human readable address", False, analysis_priority="low"),
 
             # Application workflow - IMPORTANT for timeline analysis

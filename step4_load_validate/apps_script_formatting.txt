@@ -25,7 +25,7 @@ Based on your desired_schema.py, here's how I'd write Google Apps Script code th
       // Integer fields
       integers: ['ward', 'precinct', 'police_district', 'community_area'],
       // Coordinates (high precision)
-      coordinates: ['latitude', 'longitude', 'location_latitude', 'location_longitude'],
+      coordinates: ['latitude', 'longitude'],
       // Categories (text formatting)
       categories: [
         'license_description', 'business_activity', 'city', 'state', 'community_area_name',

@@ -22,16 +22,16 @@ security_logger = SecurityLogger()
 def initialize_security():
     """Initialize security features and run health checks"""
     logger.info("=== Security Initialization ===")
-    
+
     # Run security health checks
     health_results = security_health_check()
     failed_checks = [check for check, passed in health_results.items() if not passed]
-    
+
     if failed_checks:
         logger.warning(f"Security health check failures: {', '.join(failed_checks)}")
     else:
         logger.info("✅ All security health checks passed")
-    
+
     # Initialize secure storage
     try:
         storage = SecureStorage()
@@ -262,7 +262,8 @@ def fetch_cta(client, cfg, days_lookback: int):
 
 def flatten_location_data(df):
     """
-    Flatten nested location data to make it compatible with Google Sheets
+    Flatten nested location data to make it compatible with Google Sheets.
+    Avoids creating duplicate coordinate fields when latitude/longitude already exist.
     """
     df_flat = df.copy()
 
@@ -276,25 +277,32 @@ def flatten_location_data(df):
 
                 # Extract coordinates if they exist
                 if not location_data.empty:
-                    # Create new flattened columns
-                    df_flat['location_latitude'] = None
-                    df_flat['location_longitude'] = None
-                    df_flat['location_human_address'] = None
+                    # Determine coordinate field names to avoid duplicates
+                    lat_field = 'latitude' if 'latitude' not in df_flat.columns else 'location_latitude'
+                    lon_field = 'longitude' if 'longitude' not in df_flat.columns else 'location_longitude'
+
+                    # Only create fields that don't already exist
+                    if lat_field not in df_flat.columns:
+                        df_flat[lat_field] = None
+                    if lon_field not in df_flat.columns:
+                        df_flat[lon_field] = None
+                    if 'location_human_address' not in df_flat.columns:
+                        df_flat['location_human_address'] = None
 
                     # Process each location entry
                     for idx, loc in location_data.items():
                         if isinstance(loc, dict):
-                            if 'latitude' in loc:
-                                df_flat.at[idx, 'location_latitude'] = loc['latitude']
-                            if 'longitude' in loc:
-                                df_flat.at[idx, 'location_longitude'] = loc['longitude']
+                            if 'latitude' in loc and lat_field in df_flat.columns:
+                                df_flat.at[idx, lat_field] = loc['latitude']
+                            if 'longitude' in loc and lon_field in df_flat.columns:
+                                df_flat.at[idx, lon_field] = loc['longitude']
                             if 'human_address' in loc:
                                 df_flat.at[idx, 'location_human_address'] = str(loc['human_address'])
 
                     # Drop the original nested location column
                     df_flat = df_flat.drop(columns=['location'])
 
-                    logger.info("Successfully flattened location data")
+                    logger.info(f"Successfully flattened location data using {lat_field}/{lon_field}")
         except Exception as e:
             logger.warning(f"Could not flatten location data: {e}")
             # If flattening fails, just drop the location column
@@ -306,7 +314,7 @@ def flatten_location_data(df):
 def main():
     # Initialize security features first
     security_storage = initialize_security()
-    
+
     settings = load_settings()
     cfg = load_datasets_yaml()
     client = SocrataClient(cfg["domain"])
@@ -324,10 +332,7 @@ def main():
         logger.error(f"Dataset config: {cfg['datasets']['business_licenses']}")
         raise
 
-    # Create empty weekly dataframe since we're not doing weekly aggregation
-    lic_weekly = pd.DataFrame(columns=["week_start","community_area","community_area_name","bucket","new_licenses","avg_13w","std_13w","wow","momentum_index"])
-
-    permits_weekly = pd.DataFrame()
+    # Fetch building permits if enabled
     p_df = pd.DataFrame()
     if settings.enable_permits:
         logger.info("Fetching Building Permits...")
@@ -338,10 +343,8 @@ def main():
             logger.error(f"Failed to fetch building permits: {e}")
             p_df = pd.DataFrame()
 
-        # Create empty weekly dataframe since we're not doing weekly aggregation
-        permits_weekly = pd.DataFrame(columns=["week_start","community_area","permits"])
-
-    cta_weekly = pd.DataFrame()
+    # Fetch CTA data if enabled
+    cta_df = pd.DataFrame()
     if settings.enable_cta:
         logger.info("Fetching CTA boardings...")
         try:
@@ -351,33 +354,9 @@ def main():
             logger.error(f"Failed to fetch CTA boardings: {e}")
             cta_df = pd.DataFrame()
 
-        # Create empty weekly dataframe since we're not doing weekly aggregation
-        cta_weekly = pd.DataFrame(columns=["week_start", "total_rides"])
-
-    # Create empty summary since we're not doing weekly aggregation
-    summary_df = pd.DataFrame(columns=["metric","week_start","community_area_name","value"])
-    # Set latest_week to current date for brief generation
-    from datetime import datetime
-    latest_week = datetime.utcnow()
-
-    # Sheets
-    logger.info("Writing to Google Sheets...")
+    # Initialize Google Sheets connection
+    logger.info("Connecting to Google Sheets...")
     sh = open_sheet(settings.sheet_id, settings.google_creds_path)
-
-    # Write weekly aggregated data
-    ws = upsert_worksheet(sh, settings.tab_licenses, rows=max(len(lic_weekly)+10, 100), cols=10)
-    overwrite_with_dataframe(ws, lic_weekly)
-
-    if settings.enable_permits:
-        ws2 = upsert_worksheet(sh, settings.tab_permits, rows=max(len(permits_weekly)+10, 100), cols=5)
-        overwrite_with_dataframe(ws2, permits_weekly)
-
-    if settings.enable_cta:
-        ws3 = upsert_worksheet(sh, settings.tab_cta, rows=max(len(cta_weekly)+10, 100), cols=3)
-        overwrite_with_dataframe(ws3, cta_weekly)
-
-    ws4 = upsert_worksheet(sh, settings.tab_summary, rows=max(len(summary_df)+10, 100), cols=8)
-    overwrite_with_dataframe(ws4, summary_df)
 
     # Write full expanded datasets using dynamic updates (upsert)
     raw_datasets = {}

@@ -341,6 +341,9 @@ class SmartDataCleaner:
             # Apply business rules validation
             cleaned_df = self._apply_business_rules(cleaned_df, dataset_name)
 
+            # Remove duplicate coordinate fields (prefer latitude/longitude over location_latitude/location_longitude)
+            cleaned_df = self._deduplicate_coordinate_fields(cleaned_df)
+
             # Store cleaning history
             self.cleaning_history.append({
                 'dataset_name': dataset_name,
@@ -561,6 +564,62 @@ class SmartDataCleaner:
 
         except Exception as e:
             print(f"   ⚠️  Business rules application error: {e}")
+
+        return df
+
+    def _deduplicate_coordinate_fields(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Remove duplicate coordinate fields, preferring standard latitude/longitude over location_* variants.
+
+        Args:
+            df: DataFrame that may contain duplicate coordinate fields
+
+        Returns:
+            DataFrame with deduplicated coordinate fields
+        """
+        # Check for duplicate coordinate fields
+        has_lat = 'latitude' in df.columns
+        has_lon = 'longitude' in df.columns
+        has_location_lat = 'location_latitude' in df.columns
+        has_location_lon = 'location_longitude' in df.columns
+
+        dropped_fields = []
+
+        # If we have both latitude and location_latitude, prefer latitude
+        if has_lat and has_location_lat:
+            # Copy non-null values from location_latitude to latitude if latitude is null
+            null_mask = df['latitude'].isnull()
+            if null_mask.any() and df['location_latitude'].notnull().any():
+                df.loc[null_mask, 'latitude'] = df.loc[null_mask, 'location_latitude']
+
+            # Drop the duplicate field
+            df = df.drop(columns=['location_latitude'])
+            dropped_fields.append('location_latitude')
+
+        # If we have both longitude and location_longitude, prefer longitude
+        if has_lon and has_location_lon:
+            # Copy non-null values from location_longitude to longitude if longitude is null
+            null_mask = df['longitude'].isnull()
+            if null_mask.any() and df['location_longitude'].notnull().any():
+                df.loc[null_mask, 'longitude'] = df.loc[null_mask, 'location_longitude']
+
+            # Drop the duplicate field
+            df = df.drop(columns=['location_longitude'])
+            dropped_fields.append('location_longitude')
+
+        # If we only have location_* fields, rename them to standard names
+        elif has_location_lat and not has_lat:
+            df = df.rename(columns={'location_latitude': 'latitude'})
+            dropped_fields.append('location_latitude → latitude')
+
+        elif has_location_lon and not has_lon:
+            df = df.rename(columns={'location_longitude': 'longitude'})
+            dropped_fields.append('location_longitude → longitude')
+
+        if dropped_fields:
+            print(f"\n🔧 Coordinate field deduplication:")
+            for field in dropped_fields:
+                print(f"   ✅ {field}")
 
         return df
 
