@@ -221,8 +221,7 @@ class ChicagoDesiredSchemas:
             # Additional fields for improved success rate
             DesiredFieldDefinition("conditional_approval", DesiredDataType.BOOLEAN, "Conditional approval flag (Y/N)", False, analysis_priority="medium"),
             DesiredFieldDefinition("ward_precinct", DesiredDataType.CATEGORY, "Ward-Precinct combination", False, analysis_priority="low"),
-            DesiredFieldDefinition("ssa", DesiredDataType.INTEGER, "Special Service Area number", False, analysis_priority="low"),
-            DesiredFieldDefinition("license_status_change_date", DesiredDataType.DATE, "Status change date", False, analysis_priority="low"),
+            # Note: ssa and license_status_change_date are defined in schema.py to avoid duplicates
         ]
     )
 

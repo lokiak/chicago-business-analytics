@@ -341,7 +341,7 @@ class SmartDataCleaner:
             # Apply business rules validation
             cleaned_df = self._apply_business_rules(cleaned_df, dataset_name)
 
-            # Remove duplicate coordinate fields (prefer latitude/longitude over location_latitude/location_longitude)
+            # Remove duplicate coordinate fields (prefer latitude/longitude over location_* variants)
             cleaned_df = self._deduplicate_coordinate_fields(cleaned_df)
 
             # Store cleaning history

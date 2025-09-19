@@ -25,7 +25,7 @@ sys.path.append(str(Path(__file__).parent.parent / "shared"))
 
 # Import existing modules
 from config_manager import load_settings
-from sheets_client import open_sheet, upsert_worksheet, overwrite_with_dataframe
+from sheets_client import open_sheet, upsert_worksheet, overwrite_with_dataframe, upsert_to_worksheet
 
 # Import our new GX modules
 from gx_data_cleaning import SmartDataCleaner, batch_clean_datasets
@@ -321,12 +321,13 @@ class GXPipelineManager:
     def save_cleaned_data_to_sheets(self, cleaned_datasets: Dict[str, pd.DataFrame],
                                   suffix: str = "_GX_Cleaned") -> bool:
         """
-        Save cleaned datasets to Google Sheets with GX suffix.
+        Save cleaned datasets to Google Sheets with GX suffix using upsert logic.
 
         This maintains compatibility with the existing workflow while clearly
         marking datasets that have been processed with Great Expectations.
+        Now uses upsert instead of overwrite to preserve incremental updates.
         """
-        print(f"\n💾 SAVING CLEANED DATA TO GOOGLE SHEETS")
+        print(f"\n💾 UPSERTING CLEANED DATA TO GOOGLE SHEETS")
         print("=" * 50)
 
         try:
@@ -334,33 +335,47 @@ class GXPipelineManager:
             settings = load_settings()
             sh = open_sheet(settings.sheet_id, settings.google_creds_path)
 
-            # Define cleaned datasets and their target worksheet names
+            # Define cleaned datasets and their target worksheet names with key columns
             worksheet_mapping = {
-                'business_licenses': f'Business_Licenses{suffix}',
-                'building_permits': f'Building_Permits{suffix}',
-                'cta_boardings': f'CTA{suffix}'
+                'business_licenses': {
+                    'name': f'Business_Licenses{suffix}',
+                    'key_columns': ['id']
+                },
+                'building_permits': {
+                    'name': f'Building_Permits{suffix}',
+                    'key_columns': ['id']
+                },
+                'cta_boardings': {
+                    'name': f'CTA{suffix}',
+                    'key_columns': ['service_date']
+                }
             }
 
             saved_count = 0
             for dataset_name, df in cleaned_datasets.items():
                 if dataset_name in worksheet_mapping:
-                    worksheet_name = worksheet_mapping[dataset_name]
+                    config = worksheet_mapping[dataset_name]
+                    worksheet_name = config['name']
+                    key_columns = config['key_columns']
 
                     try:
-                        print(f"\n📤 Saving {worksheet_name}...")
+                        print(f"\n📤 Upserting {worksheet_name}...")
                         print(f"   Rows: {len(df):,}")
                         print(f"   Columns: {len(df.columns)}")
+                        print(f"   Key columns: {key_columns}")
 
                         # Create or update worksheet
                         ws = upsert_worksheet(sh, worksheet_name,
                                             rows=len(df)+100, cols=len(df.columns)+5)
-                        overwrite_with_dataframe(ws, df)
 
-                        print(f"   ✅ SUCCESS: Saved to '{worksheet_name}' tab")
+                        # Use upsert instead of overwrite to preserve incremental updates
+                        upsert_to_worksheet(ws, df, key_columns)
+
+                        print(f"   ✅ SUCCESS: Upserted to '{worksheet_name}' tab")
                         saved_count += 1
 
                     except Exception as e:
-                        print(f"   ❌ ERROR saving {worksheet_name}: {str(e)}")
+                        print(f"   ❌ ERROR upserting {worksheet_name}: {str(e)}")
                         return False
 
             print(f"\n✅ SAVED {saved_count}/{len(cleaned_datasets)} DATASETS TO GOOGLE SHEETS")
