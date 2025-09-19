@@ -562,12 +562,13 @@ class SmartDataCleaner:
                         df.loc[df[fee_field] < 0, fee_field] = 0
                     print(f"   ✅ Applied: Non-negative fees")
 
-            # Add geo-friendly columns for building permits (for Looker Studio)
-            if dataset_name == 'building_permits':
-                self._add_geo_columns_for_building_permits(df)
-
         except Exception as e:
             print(f"   ⚠️  Business rules application error: {e}")
+
+        # Add geo-friendly columns for building permits (for Looker Studio)
+        # This runs outside the try/except to ensure it always executes
+        if dataset_name == 'building_permits':
+            self._add_geo_columns_for_building_permits(df)
 
         return df
 
