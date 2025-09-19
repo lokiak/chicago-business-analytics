@@ -562,8 +562,63 @@ class SmartDataCleaner:
                         df.loc[df[fee_field] < 0, fee_field] = 0
                     print(f"   ✅ Applied: Non-negative fees")
 
+            # Add geo-friendly columns for building permits (for Looker Studio)
+            if dataset_name == 'building_permits':
+                self._add_geo_columns_for_building_permits(df)
+
         except Exception as e:
             print(f"   ⚠️  Business rules application error: {e}")
+
+        return df
+
+    def _add_geo_columns_for_building_permits(self, df: pd.DataFrame) -> None:
+        """Add geo-friendly columns for Looker Studio visualization."""
+        try:
+            # Check if we have the required address components
+            address_components = ['street_number', 'street_direction', 'street_name']
+            has_address_data = all(col in df.columns for col in address_components)
+
+            if has_address_data:
+                # Create full_address column for Google Maps (Address type in Looker Studio)
+                def create_full_address(row):
+                    parts = []
+
+                    # Add street number if available
+                    if pd.notna(row.get('street_number')) and str(row.get('street_number')).strip():
+                        parts.append(str(row['street_number']).strip())
+
+                    # Add street direction if available
+                    if pd.notna(row.get('street_direction')) and str(row.get('street_direction')).strip():
+                        parts.append(str(row['street_direction']).strip())
+
+                    # Add street name if available
+                    if pd.notna(row.get('street_name')) and str(row.get('street_name')).strip():
+                        parts.append(str(row['street_name']).strip())
+
+                    # Combine with Chicago, Illinois
+                    if parts:
+                        street_address = ' '.join(parts)
+                        return f"{street_address}, Chicago, Illinois"
+                    else:
+                        return "Chicago, Illinois"  # Fallback for incomplete addresses
+
+                df['full_address'] = df.apply(create_full_address, axis=1)
+                print(f"   ✅ Added full_address column for Google Maps visualization")
+
+                # Create city column for Geo charts (City type in Looker Studio)
+                df['city'] = 'Chicago'
+                print(f"   ✅ Added city column for Geo chart visualization")
+
+                # Log some examples for verification
+                non_empty_addresses = df[df['full_address'] != 'Chicago, Illinois']['full_address'].head(3)
+                if not non_empty_addresses.empty:
+                    print(f"   📍 Sample addresses: {list(non_empty_addresses)}")
+
+            else:
+                print(f"   ⚠️  Missing address components for geo columns")
+
+        except Exception as e:
+            print(f"   ⚠️  Error adding geo columns: {e}")
 
         return df
 
