@@ -597,7 +597,7 @@ class SmartDataCleaner:
                         return "Chicago, IL"
 
                 # Add basic geo columns (fast, no geocoding)
-                self._add_basic_geo_columns(df)
+                self._add_geo_columns_with_smart_caching(df)
 
                 print(f"   ✅ Added full_address column with zip codes")
                 print(f"   ✅ Added city column for Geo chart visualization")
@@ -705,11 +705,11 @@ class SmartDataCleaner:
                     g = geocoder.arcgis(full_addr)
 
                     if g.ok:
-                        # Extract pattern info
+                        # Extract pattern info with proper precision (6 decimal places for Looker Studio)
                         zip_code = self._extract_zip_from_geocoder(g)
                         street_patterns[street_name] = {
-                            'base_lat': g.lat,
-                            'base_lng': g.lng,
+                            'base_lat': round(g.lat, 6),
+                            'base_lng': round(g.lng, 6),
                             'zip_code': zip_code
                         }
                         geocoded_count += 1
@@ -745,10 +745,12 @@ class SmartDataCleaner:
                     # Apply learned pattern
                     pattern = street_patterns[street_name]
 
-                    # Use base coordinates (could be enhanced with address number offsets)
-                    df.at[idx, 'latitude'] = pattern['base_lat']
-                    df.at[idx, 'longitude'] = pattern['base_lng']
-                    df.at[idx, 'lat_lng'] = f"{pattern['base_lat']},{pattern['base_lng']}"
+                    # Use base coordinates with proper precision (6 decimal places for Looker Studio)
+                    lat_rounded = round(pattern['base_lat'], 6)
+                    lng_rounded = round(pattern['base_lng'], 6)
+                    df.at[idx, 'latitude'] = lat_rounded
+                    df.at[idx, 'longitude'] = lng_rounded
+                    df.at[idx, 'lat_lng'] = f"{lat_rounded},{lng_rounded}"
                     df.at[idx, 'zip_code'] = pattern['zip_code']
 
                     # Create enhanced full address
@@ -784,9 +786,12 @@ class SmartDataCleaner:
                 g = geocoder.arcgis(full_addr)
 
                 if g.ok:
-                    df.at[idx, 'latitude'] = g.lat
-                    df.at[idx, 'longitude'] = g.lng
-                    df.at[idx, 'lat_lng'] = f"{g.lat},{g.lng}"
+                    # Round coordinates to 6 decimal places for Looker Studio compatibility
+                    lat_rounded = round(g.lat, 6)
+                    lng_rounded = round(g.lng, 6)
+                    df.at[idx, 'latitude'] = lat_rounded
+                    df.at[idx, 'longitude'] = lng_rounded
+                    df.at[idx, 'lat_lng'] = f"{lat_rounded},{lng_rounded}"
 
                     zip_code = self._extract_zip_from_geocoder(g)
                     df.at[idx, 'zip_code'] = zip_code
@@ -1195,13 +1200,18 @@ class SmartDataCleaner:
         # Set city for all rows (this is static)
         df['city'] = 'Chicago'
 
+        # Create base_address column for smart caching logic
+        if 'base_address' not in df.columns:
+            df['base_address'] = df.apply(self._create_full_address, axis=1)
+
         try:
             # Try to get existing data from Google Sheets for smart caching
             sheet_id = os.getenv('SHEET_ID')
             if sheet_id:
                 print(f"   🔍 Checking existing geo data in Google Sheets for smart caching...")
 
-                sh = open_sheet(sheet_id)
+                creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+                sh = open_sheet(sheet_id, creds_path)
                 existing_geo_data = self._get_existing_geo_data(sh, 'Building_Permits_GX_Cleaned')
 
                 if existing_geo_data is not None and not existing_geo_data.empty:
@@ -1223,16 +1233,27 @@ class SmartDataCleaner:
             if len(addresses_to_geocode) > 0:
                 print(f"   🗺️  Geocoding {len(addresses_to_geocode)} new/missing addresses...")
 
-                # Geocode only the missing addresses
-                geo_results = self._enhance_addresses_with_geocoding(addresses_to_geocode)
+                # Create a temporary dataframe for geocoding missing addresses
+                temp_df = pd.DataFrame()
+                temp_df['base_address'] = addresses_to_geocode.values
+                temp_df['latitude'] = None
+                temp_df['longitude'] = None
+                temp_df['full_address'] = None
+                temp_df['zip_code'] = None
+                temp_df['lat_lng'] = None
+
+                # Use our efficient smart sampling geocoding
+                self._apply_geopy_geocoding(temp_df)
 
                 # Update only the rows that needed geocoding
-                for i, (idx, address) in enumerate(addresses_to_geocode.items()):
-                    df.loc[idx, 'full_address'] = geo_results['full_address'][i]
-                    df.loc[idx, 'zip_code'] = geo_results['zip_code'][i]
-                    df.loc[idx, 'latitude'] = geo_results['latitude'][i]
-                    df.loc[idx, 'longitude'] = geo_results['longitude'][i]
-                    df.loc[idx, 'lat_lng'] = geo_results['lat_lng'][i]
+                for i, idx in enumerate(addresses_to_geocode.index):
+                    df.loc[idx, 'full_address'] = temp_df.iloc[i]['full_address']
+                    df.loc[idx, 'zip_code'] = temp_df.iloc[i]['zip_code']
+                    df.loc[idx, 'latitude'] = temp_df.iloc[i]['latitude']
+                    df.loc[idx, 'longitude'] = temp_df.iloc[i]['longitude']
+                    df.loc[idx, 'lat_lng'] = temp_df.iloc[i]['lat_lng']
+
+                print(f"   ✅ Cached geocoding results for future runs")
             else:
                 print(f"   ✅ All addresses already geocoded - using cached data")
 
@@ -1246,13 +1267,8 @@ class SmartDataCleaner:
 
         except Exception as e:
             print(f"   ⚠️  Smart caching error, falling back to basic geocoding: {e}")
-            # Fallback to full geocoding if caching fails
-            geo_results = self._enhance_addresses_with_geocoding(df['base_address'])
-            df['full_address'] = geo_results['full_address']
-            df['zip_code'] = geo_results['zip_code']
-            df['latitude'] = geo_results['latitude']
-            df['longitude'] = geo_results['longitude']
-            df['lat_lng'] = geo_results['lat_lng']
+            # Fallback to our efficient geocoding if caching fails
+            self._apply_geopy_geocoding(df)
 
     def _get_existing_geo_data(self, sh, worksheet_name: str):
         """Get existing geo data from Google Sheets."""
