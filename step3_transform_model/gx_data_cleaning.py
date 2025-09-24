@@ -600,11 +600,11 @@ class SmartDataCleaner:
         # Add geo-friendly columns for building permits (for Looker Studio)
         # This runs outside the try/except to ensure it always executes
         if dataset_name == 'building_permits':
-            self._add_geo_columns_for_building_permits(df)
+            df = self._add_geo_columns_for_building_permits(df)
 
         return df
 
-    def _add_geo_columns_for_building_permits(self, df: pd.DataFrame) -> None:
+    def _add_geo_columns_for_building_permits(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add geo-friendly columns for Looker Studio visualization with geocoding."""
         try:
             # Check if we have the required address components
@@ -628,8 +628,8 @@ class SmartDataCleaner:
                     else:
                         return "Chicago, IL"
 
-                # Add basic geo columns (fast, no geocoding)
-                self._add_geo_columns_with_smart_caching(df)
+                # Add basic geo columns (fast, no geocoding) and get updated DataFrame
+                df = self._add_geo_columns_with_smart_caching(df)
 
                 print(f"   ✅ Added full_address column with zip codes")
                 print(f"   ✅ Added city column for Geo chart visualization")
@@ -679,27 +679,159 @@ class SmartDataCleaner:
             print(f"   ⚠️  Error adding geo columns: {e}")
 
     def _apply_geopy_geocoding(self, df: pd.DataFrame) -> None:
-        """Apply smart geocoding with rate limiting and sampling for large datasets."""
+        """Apply simple, reliable geocoding with ArcGIS."""
         import geocoder
         import time
+        import ssl
 
-        # Create full addresses
-        df['base_address'] = df.apply(self._create_full_address, axis=1)
+        # SSL fix for geocoding
+        ssl._create_default_https_context = ssl._create_unverified_context
 
-        # Smart sampling for large datasets
-        total_addresses = len(df)
-        if total_addresses > 1000:
-            print(f"   📊 Large dataset detected ({total_addresses} addresses)")
-            print(f"   🎯 Using smart sampling + pattern matching for efficiency")
+        # For efficiency: limit to first 500 addresses per run to avoid timeouts
+        batch_limit = min(500, len(df))
+        print(f"   🗺️ Geocoding first {batch_limit} addresses using ArcGIS...")
 
-            # Sample geocoding approach for large datasets
-            self._apply_smart_sampling_geocoding(df)
+        geocoded_count = 0
+        for i, (idx, row) in enumerate(df.iterrows()):
+            if i >= batch_limit:  # Stop after batch_limit addresses
+                break
+            try:
+                base_addr = row.get('base_address', '')
+                if pd.notna(base_addr) and base_addr.strip():
+                    # Create full address for geocoding
+                    full_addr = f"{base_addr}, Chicago, IL"
+
+                    # Use ArcGIS geocoding (most reliable)
+                    g = geocoder.arcgis(full_addr)
+
+                    if g.ok and g.latlng:
+                        lat, lng = g.latlng
+
+                        # Store coordinates with 6 decimal precision
+                        df.at[idx, 'latitude'] = round(lat, 6)
+                        df.at[idx, 'longitude'] = round(lng, 6)
+                        df.at[idx, 'lat_lng'] = f"{round(lat, 6)},{round(lng, 6)}"
+
+                        # Create full address
+                        zip_code = g.postal if hasattr(g, 'postal') and g.postal else None
+                        if zip_code and zip_code.isdigit() and len(zip_code) == 5:
+                            df.at[idx, 'zip_code'] = zip_code
+                            df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois {zip_code}"
+                        else:
+                            df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois"
+
+                        geocoded_count += 1
+
+                        if geocoded_count % 100 == 0:
+                            print(f"   📍 Geocoded {geocoded_count}/{len(df)} addresses...")
+
+                    # Rate limiting to be respectful
+                    time.sleep(0.1)
+
+            except Exception as e:
+                # Continue on errors
+                continue
+
+        print(f"   ✅ Successfully geocoded {geocoded_count}/{len(df)} addresses")
+
+    def _simple_direct_geocoding(self, df: pd.DataFrame, needs_geocoding_mask) -> None:
+        """Production-ready geocoding with smart batching and progress tracking."""
+        import geocoder
+        import ssl
+        import time
+
+        print(f"       🚀 _simple_direct_geocoding function called")
+        print(f"       📊 DataFrame shape: {df.shape}")
+        print(f"       📊 Mask type: {type(needs_geocoding_mask)}")
+
+        # SSL fix
+        ssl._create_default_https_context = ssl._create_unverified_context
+        print(f"       🔐 SSL context configured")
+
+        # Get all indices that need geocoding
+        geocoding_indices = df[needs_geocoding_mask].index.tolist()
+        total_to_geocode = len(geocoding_indices)
+        print(f"       📊 Found {total_to_geocode} indices to geocode")
+
+        # Production mode: process addresses in efficient batches with checkpointing
+        batch_size = min(100, total_to_geocode)  # Process 100 addresses per session
+        max_per_session = min(500, total_to_geocode)  # Max 500 per run to avoid timeouts
+        
+        if total_to_geocode > max_per_session:
+            geocoding_indices = geocoding_indices[:max_per_session]
+            print(f"   🏭 PRODUCTION MODE: Processing {max_per_session} of {total_to_geocode} addresses this session")
+            print(f"   💡 Remaining {total_to_geocode - max_per_session} addresses will be processed in future runs")
         else:
-            # Full geocoding for smaller datasets
-            self._apply_full_geocoding(df)
+            print(f"   🏭 PRODUCTION MODE: Processing all {total_to_geocode} addresses")
+        
+        print(f"   📦 Batch size: {batch_size} addresses per checkpoint")
 
-        # Clean up temporary column
-        df.drop('base_address', axis=1, inplace=True)
+        geocoded_count = 0
+        
+        # Process addresses in batches with checkpointing
+        print(f"   📍 Starting batch processing...")
+        
+        for batch_start in range(0, len(geocoding_indices), batch_size):
+            batch_end = min(batch_start + batch_size, len(geocoding_indices))
+            batch_indices = geocoding_indices[batch_start:batch_end]
+            batch_num = (batch_start // batch_size) + 1
+            total_batches = (len(geocoding_indices) + batch_size - 1) // batch_size
+            
+            print(f"   📦 Processing batch {batch_num}/{total_batches}: {len(batch_indices)} addresses...")
+            batch_geocoded = 0
+            
+            for i, idx in enumerate(batch_indices):
+                try:
+                    row = df.loc[idx]
+                    base_addr = row.get('base_address', '')
+
+                    if base_addr and base_addr.strip():
+                        # Show progress every 10 addresses within batch
+                        if i % 10 == 0:
+                            print(f"     [{i+1}/{len(batch_indices)}] {base_addr[:30]}...")
+                        
+                        full_addr = f"{base_addr}, Chicago, IL"
+                        g = geocoder.arcgis(full_addr)
+
+                        if g.ok and g.latlng:
+                            lat, lng = g.latlng
+
+                            # Store with 6 decimal precision (same as successful test)
+                            df.at[idx, 'latitude'] = round(lat, 6)
+                            df.at[idx, 'longitude'] = round(lng, 6)
+                            df.at[idx, 'lat_lng'] = f"{round(lat, 6)},{round(lng, 6)}"
+                            df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois"
+
+                            # Extract ZIP if available
+                            if hasattr(g, 'postal') and g.postal and g.postal.isdigit():
+                                df.at[idx, 'zip_code'] = g.postal
+                                df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois {g.postal}"
+
+                            batch_geocoded += 1
+                            geocoded_count += 1
+
+                        # Rate limiting to be respectful to the API
+                        time.sleep(0.1)
+
+                except Exception as e:
+                    continue
+            
+            print(f"   ✅ Batch {batch_num} completed: {batch_geocoded}/{len(batch_indices)} addresses geocoded")
+            
+            # Brief pause between batches to be API-friendly
+            if batch_end < len(geocoding_indices):
+                time.sleep(1)
+
+        print(f"   🎉 Geocoding session completed: {geocoded_count}/{len(geocoding_indices)} addresses successfully geocoded")
+        if total_to_geocode > max_per_session:
+            print(f"   💡 Remaining {total_to_geocode - max_per_session} addresses will be processed in future runs")
+
+        # CRITICAL: Ensure DataFrame modifications are visible (debugging data persistence)
+        print(f"   🔍 Debugging: Checking DataFrame after geocoding...")
+        geocoded_test = df[df['latitude'].notna() & (df['latitude'] != '')].head(3)
+        print(f"   🔍 Found {len(geocoded_test)} geocoded records in DataFrame")
+        for idx, row in geocoded_test.iterrows():
+            print(f"       Row {idx}: {row.get('full_address', 'N/A')} | {row.get('latitude', 'N/A')}, {row.get('longitude', 'N/A')}")
 
     def _apply_smart_sampling_geocoding(self, df: pd.DataFrame) -> None:
         """Apply geocoding with smart sampling for large datasets."""
@@ -1218,8 +1350,8 @@ class SmartDataCleaner:
             print(f"     ⚠️  Nominatim geocoding failed for '{address}': {e}")
             return None
 
-    def _add_geo_columns_with_smart_caching(self, df: pd.DataFrame) -> None:
-        """Add geo columns with smart caching - only geocode rows missing geo data."""
+    def _add_geo_columns_with_smart_caching(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add geo columns with smart caching - only geocode rows missing geo data. Returns the modified DataFrame."""
         from shared.sheets_client import open_sheet
         import os
 
@@ -1237,57 +1369,82 @@ class SmartDataCleaner:
             df['base_address'] = df.apply(self._create_full_address, axis=1)
 
         try:
+            print(f"   🏁 Starting geo enhancement process...")
+
             # Try to get existing data from Google Sheets for smart caching
             sheet_id = os.getenv('SHEET_ID')
+            print(f"   🔍 Sheet ID: {sheet_id}")
+
             if sheet_id:
                 print(f"   🔍 Checking existing geo data in Google Sheets for smart caching...")
 
                 creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+                print(f"   🔑 Credentials path: {creds_path}")
+
+                print(f"   📡 Opening Google Sheet...")
                 sh = open_sheet(sheet_id, creds_path)
+                print(f"   ✅ Sheet opened successfully")
+
+                print(f"   📋 Getting existing geo data...")
                 existing_geo_data = self._get_existing_geo_data(sh, 'Building_Permits_GX_Cleaned')
+                print(f"   📊 Existing geo data query completed")
 
                 if existing_geo_data is not None and not existing_geo_data.empty:
-                    # Merge existing geo data with current data
+                    print(f"   🔄 Merging existing geo data...")
                     df = self._merge_existing_geo_data(df, existing_geo_data)
                     print(f"   📊 Loaded existing geo data for {len(existing_geo_data)} records")
                 else:
                     print(f"   💡 No existing geo data found, will geocode all addresses")
 
+            print(f"   🔍 Analyzing geocoding needs...")
+            print(f"   📊 DataFrame shape: {df.shape}")
+            print(f"   📊 Columns: {list(df.columns)}")
+
+            # Check data types and sample values
+            if 'latitude' in df.columns:
+                lat_sample = df['latitude'].head(3).tolist()
+                print(f"   🧪 Sample latitude values: {lat_sample}")
+                print(f"   🧪 Latitude dtype: {df['latitude'].dtype}")
+
+            if 'base_address' in df.columns:
+                addr_sample = df['base_address'].head(3).tolist()
+                print(f"   🧪 Sample base_address values: {addr_sample}")
+
             # Identify rows that need geocoding (missing lat/lng but have address data)
+            # Handle both NaN and empty string values from Google Sheets
+            print(f"   🔍 Building geocoding mask...")
             needs_geocoding = (
-                (df['latitude'].isna() | df['longitude'].isna()) &
+                (df['latitude'].isna() | (df['latitude'] == '') | df['longitude'].isna() | (df['longitude'] == '')) &
                 (df['base_address'] != 'Chicago, IL') &
-                df['base_address'].notna()
+                df['base_address'].notna() &
+                (df['base_address'] != '')
             )
+            print(f"   📊 Geocoding mask created: {needs_geocoding.sum()} addresses need geocoding")
 
             addresses_to_geocode = df.loc[needs_geocoding, 'base_address']
+            print(f"   📊 Addresses to geocode: {len(addresses_to_geocode)}")
 
             if len(addresses_to_geocode) > 0:
-                print(f"   🗺️  Geocoding {len(addresses_to_geocode)} new/missing addresses...")
+                print(f"   🗺️  Starting geocoding process for {len(addresses_to_geocode)} addresses...")
 
-                # Create a temporary dataframe for geocoding missing addresses
-                temp_df = pd.DataFrame()
-                temp_df['base_address'] = addresses_to_geocode.values
-                temp_df['latitude'] = None
-                temp_df['longitude'] = None
-                temp_df['full_address'] = None
-                temp_df['zip_code'] = None
-                temp_df['lat_lng'] = None
+                # Use simple, direct geocoding (proven to work)
+                self._simple_direct_geocoding(df, needs_geocoding)
 
-                # Use our efficient smart sampling geocoding
-                self._apply_geopy_geocoding(temp_df)
-
-                # Update only the rows that needed geocoding
-                for i, idx in enumerate(addresses_to_geocode.index):
-                    df.loc[idx, 'full_address'] = temp_df.iloc[i]['full_address']
-                    df.loc[idx, 'zip_code'] = temp_df.iloc[i]['zip_code']
-                    df.loc[idx, 'latitude'] = temp_df.iloc[i]['latitude']
-                    df.loc[idx, 'longitude'] = temp_df.iloc[i]['longitude']
-                    df.loc[idx, 'lat_lng'] = temp_df.iloc[i]['lat_lng']
-
-                print(f"   ✅ Cached geocoding results for future runs")
+                print(f"   ✅ Geocoding process completed")
             else:
                 print(f"   ✅ All addresses already geocoded - using cached data")
+
+            # Create full_address for all rows (even when using cached data)
+            for idx, row in df.iterrows():
+                if pd.notna(row.get('base_address')) and row.get('base_address') != 'Chicago, IL':
+                    base_addr = str(row['base_address']).strip()
+                    zip_code = row.get('zip_code')
+
+                    # Create full address with zip if available
+                    if pd.notna(zip_code) and str(zip_code).strip() and str(zip_code).strip() != '0':
+                        df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois {str(zip_code).strip()}"
+                    else:
+                        df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois"
 
             # Handle rows without proper addresses
             no_address_rows = (df['base_address'] == 'Chicago, IL') | df['base_address'].isna()
@@ -1301,6 +1458,8 @@ class SmartDataCleaner:
             print(f"   ⚠️  Smart caching error, falling back to basic geocoding: {e}")
             # Fallback to our efficient geocoding if caching fails
             self._apply_geopy_geocoding(df)
+
+        return df
 
     def _get_existing_geo_data(self, sh, worksheet_name: str):
         """Get existing geo data from Google Sheets."""

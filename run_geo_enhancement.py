@@ -20,9 +20,13 @@ def main():
     print("🗺️  BUILDING PERMITS GEO ENHANCEMENT")
     print("=" * 50)
 
+    print("🔧 Step 1: Environment setup...")
     # Set up environment
     sheet_id = os.getenv('SHEET_ID')
     creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+
+    print(f"   📋 Sheet ID: {sheet_id}")
+    print(f"   🔑 Creds path: {creds_path}")
 
     if not sheet_id:
         print("❌ SHEET_ID environment variable not set!")
@@ -32,12 +36,17 @@ def main():
         return
 
     try:
-        print("📊 Loading existing building permits data from Google Sheets...")
+        print("🔧 Step 2: Connecting to Google Sheets...")
         sh = open_sheet(sheet_id, creds_path)
+        print("   ✅ Google Sheets connection successful")
 
-        # Load raw building permits data
+        print("🔧 Step 3: Opening Building_Permits_Full worksheet...")
         ws = sh.worksheet('Building_Permits_Full')
+        print("   ✅ Worksheet opened successfully")
+
+        print("🔧 Step 4: Loading data (this may take a moment for large datasets)...")
         data = ws.get_all_records()
+        print(f"   ✅ Data loaded: {len(data)} records")
 
         if not data:
             print("❌ No building permits data found!")
@@ -62,11 +71,14 @@ def main():
 
         print(f"   📍 Sample addresses to process: {sample_addresses[:3]}")
 
-        print("\n🚀 Running GX cleaning with smart geo caching...")
+        print("🔧 Step 6: Starting GX cleaning with smart geo caching...")
 
         # Run the smart cleaning with geo enhancement
+        print("   🧹 Initializing SmartDataCleaner...")
         cleaner = SmartDataCleaner()
+        print("   🚀 Executing smart cleaning...")
         cleaned_df = cleaner.execute_smart_cleaning(df, 'building_permits')
+        print("   ✅ Smart cleaning completed")
 
         print(f"\n📊 Enhancement Results:")
         print(f"   Original columns: {len(df.columns)}")
@@ -77,20 +89,50 @@ def main():
         added_geo_cols = [col for col in geo_columns if col in cleaned_df.columns]
         print(f"   ✅ Added geo columns: {added_geo_cols}")
 
-        # Check geocoding success rate
+        # DEBUGGING: Check if geocoded data is in the returned DataFrame
+        print(f"\n🔍 DEBUGGING: Checking geocoded data in returned DataFrame...")
         if 'latitude' in cleaned_df.columns and 'longitude' in cleaned_df.columns:
-            successful_geocodes = cleaned_df[['latitude', 'longitude']].notna().all(axis=1).sum()
+            # Debug data types
+            print(f"   🔍 Latitude dtype: {cleaned_df['latitude'].dtype}")
+            print(f"   🔍 Longitude dtype: {cleaned_df['longitude'].dtype}")
+            print(f"   🔍 First 10 latitude values (raw): {cleaned_df['latitude'].head(10).tolist()}")
+            print(f"   🔍 First 10 longitude values (raw): {cleaned_df['longitude'].head(10).tolist()}")
+
+            # Check for non-null, non-empty latitude values with more specific conditions
+            geocoded_mask = (
+                cleaned_df['latitude'].notna() &
+                (cleaned_df['latitude'] != '') &
+                (cleaned_df['latitude'] != 'None') &
+                (cleaned_df['latitude'] != None) &
+                (cleaned_df['latitude'] != 0) &
+                (cleaned_df['latitude'].astype(str) != 'None')
+            )
+            successful_geocodes = geocoded_mask.sum()
             total_addresses = (cleaned_df['street_number'].notna() &
                              cleaned_df['street_name'].notna()).sum()
-            print(f"   🎯 Geocoding success: {successful_geocodes}/{total_addresses} addresses")
+            print(f"   📊 Geocoded records found: {successful_geocodes}/{total_addresses} addresses")
 
-            # Show some sample results
-            geocoded_samples = cleaned_df[cleaned_df['latitude'].notna()].head(3)
-            for idx, row in geocoded_samples.iterrows():
-                addr = row.get('full_address', 'N/A')
-                lat_lng = row.get('lat_lng', 'N/A')
-                zip_code = row.get('zip_code', 'N/A')
-                print(f"   📍 {addr} | {lat_lng} | Zip: {zip_code}")
+            if successful_geocodes > 0:
+                print(f"   ✅ SUCCESS: Found geocoded data in DataFrame!")
+                # Show some sample geocoded results
+                geocoded_samples = cleaned_df[geocoded_mask].head(3)
+                for idx, row in geocoded_samples.iterrows():
+                    addr = row.get('full_address', 'N/A')
+                    lat = row.get('latitude', 'N/A')
+                    lng = row.get('longitude', 'N/A')
+                    lat_lng = row.get('lat_lng', 'N/A')
+                    zip_code = row.get('zip_code', 'N/A')
+                    print(f"   📍 Row {idx}: {addr} | {lat}, {lng} | {lat_lng} | Zip: {zip_code}")
+            else:
+                print(f"   ❌ ERROR: No geocoded data found in returned DataFrame!")
+                print(f"   🔍 Checking specific first 10 rows for any non-None values...")
+                for i in range(min(10, len(cleaned_df))):
+                    lat_val = cleaned_df.iloc[i]['latitude']
+                    lng_val = cleaned_df.iloc[i]['longitude']
+                    if lat_val is not None and lat_val != '' and str(lat_val) != 'None':
+                        print(f"   🎯 FOUND: Row {i} has lat={lat_val}, lng={lng_val}")
+        else:
+            print(f"   ❌ ERROR: Latitude/longitude columns not found!")
 
         print("\n💾 Saving enhanced data to Google Sheets...")
 
