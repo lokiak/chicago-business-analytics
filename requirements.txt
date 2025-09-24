@@ -12,3 +12,4 @@ markdown>=3.6
 great-expectations>=0.18.0
 cryptography>=41.0.0
 jsonschema>=4.19.0
+geocoder>=1.38.1

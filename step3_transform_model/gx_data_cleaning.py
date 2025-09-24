@@ -176,6 +176,35 @@ class SmartDataCleaner:
             # Fallback: convert to string
             return str(value) if value is not None else None
 
+    def _clean_street_number(self, value) -> str:
+        """Clean street number field: convert floats to integers, preserve as string."""
+        try:
+            if pd.isna(value) or value == '' or str(value).lower() in ['none', 'nan']:
+                return None
+
+            # Convert to string first
+            str_val = str(value).strip()
+
+            # If it's a float-like string (e.g., "4871.0"), convert to integer
+            if '.' in str_val and str_val.replace('.', '').isdigit():
+                try:
+                    # Convert to float first, then to int to remove decimals
+                    int_val = int(float(str_val))
+                    return str(int_val)
+                except (ValueError, OverflowError):
+                    pass
+
+            # If it's already an integer string, return as-is
+            if str_val.isdigit():
+                return str_val
+
+            # For any other case, return the cleaned string
+            return str_val
+
+        except Exception:
+            # Fallback: convert to string
+            return str(value) if value is not None else None
+
     def detect_and_plan_transformations(self, df: pd.DataFrame, dataset_name: str) -> Dict[str, Any]:
         """
         Analyze a dataset and create a smart transformation plan.
@@ -467,6 +496,9 @@ class SmartDataCleaner:
                 if any(keyword in field.lower() for keyword in ['id', 'permit', 'license_number', 'account']):
                     # Special handling for ID fields with mixed types
                     df[field] = df[field].apply(lambda x: self._standardize_id_field(x, field))
+                elif field.lower() == 'street_number':
+                    # Special handling for street numbers: convert floats to integers first
+                    df[field] = df[field].apply(lambda x: self._clean_street_number(x))
                 else:
                     # Regular string cleaning
                     df[field] = (df[field].astype(str)
