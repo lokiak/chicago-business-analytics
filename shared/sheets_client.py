@@ -137,7 +137,7 @@ def upsert_to_worksheet(ws, df: pd.DataFrame, key_columns: list):
         # Merge existing with updates, preferring new data
         merged_df = pd.concat([existing_clean, new_records], ignore_index=True)
 
-        # Update existing records with new values
+        # Update existing records with new values (but don't overwrite good data with empty)
         for _, new_row in updated_records.iterrows():
             key_match = True
             for key_col in key_columns:
@@ -146,10 +146,14 @@ def upsert_to_worksheet(ws, df: pd.DataFrame, key_columns: list):
                     key_match = key_match & mask
 
             if key_match.any():
-                # Update the matching row(s) with new data
+                # Update the matching row(s) with new data (but preserve existing non-empty values)
                 for col in new_row.index:
                     if col in merged_df.columns:
-                        merged_df.loc[key_match, col] = new_row[col]
+                        new_value = new_row[col]
+                        # Only update if new value is not empty OR existing value is empty
+                        if (pd.notna(new_value) and str(new_value).strip() != '') or \
+                           (merged_df.loc[key_match, col].isna() | (merged_df.loc[key_match, col] == '')).all():
+                            merged_df.loc[key_match, col] = new_value
 
         # Write the merged data back
         overwrite_with_dataframe(ws, merged_df)

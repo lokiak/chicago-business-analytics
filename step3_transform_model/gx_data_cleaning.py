@@ -753,33 +753,31 @@ class SmartDataCleaner:
         total_to_geocode = len(geocoding_indices)
         print(f"       📊 Found {total_to_geocode} indices to geocode")
 
-        # Production mode: process addresses in efficient batches with checkpointing
-        batch_size = min(100, total_to_geocode)  # Process 100 addresses per session
-        max_per_session = min(500, total_to_geocode)  # Max 500 per run to avoid timeouts
-        
+        # TESTING MODE: process small batch to verify data persistence
+        batch_size = min(50, total_to_geocode)  # Process 50 addresses per batch for testing
+        max_per_session = min(100, total_to_geocode)  # Process max 100 addresses to ensure completion
+
         if total_to_geocode > max_per_session:
-            geocoding_indices = geocoding_indices[:max_per_session]
-            print(f"   🏭 PRODUCTION MODE: Processing {max_per_session} of {total_to_geocode} addresses this session")
+            print(f"   🧪 TESTING MODE: Processing {max_per_session} of {total_to_geocode} addresses this session")
             print(f"   💡 Remaining {total_to_geocode - max_per_session} addresses will be processed in future runs")
         else:
-            print(f"   🏭 PRODUCTION MODE: Processing all {total_to_geocode} addresses")
-        
+            print(f"   🧪 TESTING MODE: Processing all {total_to_geocode} addresses")
         print(f"   📦 Batch size: {batch_size} addresses per checkpoint")
 
         geocoded_count = 0
-        
+
         # Process addresses in batches with checkpointing
         print(f"   📍 Starting batch processing...")
-        
+
         for batch_start in range(0, len(geocoding_indices), batch_size):
             batch_end = min(batch_start + batch_size, len(geocoding_indices))
             batch_indices = geocoding_indices[batch_start:batch_end]
             batch_num = (batch_start // batch_size) + 1
             total_batches = (len(geocoding_indices) + batch_size - 1) // batch_size
-            
+
             print(f"   📦 Processing batch {batch_num}/{total_batches}: {len(batch_indices)} addresses...")
             batch_geocoded = 0
-            
+
             for i, idx in enumerate(batch_indices):
                 try:
                     row = df.loc[idx]
@@ -789,7 +787,7 @@ class SmartDataCleaner:
                         # Show progress every 10 addresses within batch
                         if i % 10 == 0:
                             print(f"     [{i+1}/{len(batch_indices)}] {base_addr[:30]}...")
-                        
+
                         full_addr = f"{base_addr}, Chicago, IL"
                         g = geocoder.arcgis(full_addr)
 
@@ -815,9 +813,9 @@ class SmartDataCleaner:
 
                 except Exception as e:
                     continue
-            
+
             print(f"   ✅ Batch {batch_num} completed: {batch_geocoded}/{len(batch_indices)} addresses geocoded")
-            
+
             # Brief pause between batches to be API-friendly
             if batch_end < len(geocoding_indices):
                 time.sleep(1)
@@ -1390,9 +1388,26 @@ class SmartDataCleaner:
                 print(f"   📊 Existing geo data query completed")
 
                 if existing_geo_data is not None and not existing_geo_data.empty:
-                    print(f"   🔄 Merging existing geo data...")
-                    df = self._merge_existing_geo_data(df, existing_geo_data)
-                    print(f"   📊 Loaded existing geo data for {len(existing_geo_data)} records")
+                    # CRITICAL: Check if the "cached" data is actually corrupted (all empty strings)
+                    geo_cols_to_check = ['latitude', 'longitude', 'full_address']
+                    valid_cache_data = False
+
+                    for col in geo_cols_to_check:
+                        if col in existing_geo_data.columns:
+                            non_empty_count = ((existing_geo_data[col].notna()) &
+                                             (existing_geo_data[col] != '') &
+                                             (existing_geo_data[col].astype(str) != 'None')).sum()
+                            if non_empty_count > 0:
+                                valid_cache_data = True
+                                break
+
+                    if valid_cache_data:
+                        print(f"   🔄 Merging existing geo data...")
+                        df = self._merge_existing_geo_data(df, existing_geo_data)
+                        print(f"   📊 Loaded existing geo data for {len(existing_geo_data)} records")
+                    else:
+                        print(f"   🚨 Existing geo data is corrupted (all empty) - ignoring cache and starting fresh")
+                        print(f"   💡 Will geocode all addresses to rebuild cache")
                 else:
                     print(f"   💡 No existing geo data found, will geocode all addresses")
 
@@ -1434,7 +1449,7 @@ class SmartDataCleaner:
             else:
                 print(f"   ✅ All addresses already geocoded - using cached data")
 
-            # Create full_address for all rows (even when using cached data)
+            # Create full_address for all rows AND ensure geocoded data is properly set
             for idx, row in df.iterrows():
                 if pd.notna(row.get('base_address')) and row.get('base_address') != 'Chicago, IL':
                     base_addr = str(row['base_address']).strip()
@@ -1445,6 +1460,20 @@ class SmartDataCleaner:
                         df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois {str(zip_code).strip()}"
                     else:
                         df.at[idx, 'full_address'] = f"{base_addr}, Chicago, Illinois"
+
+                    # CRITICAL: Ensure geocoded data is properly formatted (replicate full_address success)
+                    lat = row.get('latitude')
+                    lng = row.get('longitude')
+                    if pd.notna(lat) and pd.notna(lng) and lat != '' and lng != '':
+                        # Ensure proper data types and formatting
+                        try:
+                            lat_val = float(lat)
+                            lng_val = float(lng)
+                            df.at[idx, 'latitude'] = lat_val
+                            df.at[idx, 'longitude'] = lng_val
+                            df.at[idx, 'lat_lng'] = f"{lat_val},{lng_val}"
+                        except (ValueError, TypeError):
+                            pass
 
             # Handle rows without proper addresses
             no_address_rows = (df['base_address'] == 'Chicago, IL') | df['base_address'].isna()
@@ -1517,8 +1546,12 @@ class SmartDataCleaner:
                     for col in available_columns:
                         existing_col = f"{col}_existing"
                         if existing_col in df.columns:
-                            # Update only where current data is missing and existing data exists
-                            mask = df[col].isna() & df[existing_col].notna()
+                            # Update only where current data is missing and existing data exists AND is not empty string
+                            current_missing = df[col].isna() | (df[col] == '') | (df[col].astype(str) == 'None')
+                            existing_has_real_data = (df[existing_col].notna() &
+                                                    (df[existing_col] != '') &
+                                                    (df[existing_col].astype(str) != 'None'))
+                            mask = current_missing & existing_has_real_data
                             df.loc[mask, col] = df.loc[mask, existing_col]
                             # Drop the temporary existing column
                             df.drop(existing_col, axis=1, inplace=True)
