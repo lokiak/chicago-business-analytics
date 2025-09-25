@@ -753,16 +753,13 @@ class SmartDataCleaner:
         total_to_geocode = len(geocoding_indices)
         print(f"       📊 Found {total_to_geocode} indices to geocode")
 
-        # TESTING MODE: process small batch to verify data persistence
-        batch_size = min(50, total_to_geocode)  # Process 50 addresses per batch for testing
-        max_per_session = min(100, total_to_geocode)  # Process max 100 addresses to ensure completion
+        # PRODUCTION MODE: process full dataset efficiently
+        batch_size = min(200, total_to_geocode)  # Process 200 addresses per batch
+        max_per_session = total_to_geocode  # Process ALL addresses in this session for full automation
 
-        if total_to_geocode > max_per_session:
-            print(f"   🧪 TESTING MODE: Processing {max_per_session} of {total_to_geocode} addresses this session")
-            print(f"   💡 Remaining {total_to_geocode - max_per_session} addresses will be processed in future runs")
-        else:
-            print(f"   🧪 TESTING MODE: Processing all {total_to_geocode} addresses")
+        print(f"   🏭 PRODUCTION MODE: Processing all {total_to_geocode} addresses in this session")
         print(f"   📦 Batch size: {batch_size} addresses per checkpoint")
+        print(f"   🤖 Full automation - no manual reruns needed!")
 
         geocoded_count = 0
 
@@ -823,6 +820,11 @@ class SmartDataCleaner:
         print(f"   🎉 Geocoding session completed: {geocoded_count}/{len(geocoding_indices)} addresses successfully geocoded")
         if total_to_geocode > max_per_session:
             print(f"   💡 Remaining {total_to_geocode - max_per_session} addresses will be processed in future runs")
+
+        # CRITICAL: Cleanup to prevent hanging
+        print(f"   🧹 Cleaning up geocoding resources...")
+        import gc
+        gc.collect()  # Force garbage collection to clean up connections
 
         # CRITICAL: Ensure DataFrame modifications are visible (debugging data persistence)
         print(f"   🔍 Debugging: Checking DataFrame after geocoding...")

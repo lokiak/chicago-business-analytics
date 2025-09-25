@@ -154,5 +154,12 @@ def main():
         import traceback
         traceback.print_exc()
 
+    finally:
+        # CRITICAL: Cleanup to prevent hanging in GitHub Actions
+        print("🧹 Final cleanup...")
+        import gc
+        gc.collect()
+        print("✅ Cleanup completed - script should exit cleanly")
+
 if __name__ == "__main__":
     main()
